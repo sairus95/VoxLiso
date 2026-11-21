@@ -48,7 +48,7 @@ jobs:
         run: flutter test
       - name: Clé de signature fixe (mises à jour sans désinstaller)
         env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 || vars.ANDROID_KEYSTORE_B64 }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
             mkdir -p ~/.android
