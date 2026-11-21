@@ -74,6 +74,16 @@ bool _android() {
     gradle.writeAsStringSync(g);
   }
   stdout.writeln('✔ ${gradle.path} : minSdk >= $androidMinSdk');
+
+  // ML Kit référence les modèles chinois/japonais/coréen/devanagari, que
+  // l'application n'utilise pas (alphabet latin seulement) : l'optimiseur R8
+  // doit les ignorer. Flutter charge automatiquement android/app/proguard-rules.pro.
+  final proguard = File('android/app/proguard-rules.pro');
+  final existing = proguard.existsSync() ? proguard.readAsStringSync() : '';
+  if (!existing.contains('com.google.mlkit.vision.text.chinese')) {
+    proguard.writeAsStringSync('$existing\n$_proguardRules');
+  }
+  stdout.writeln('✔ proguard-rules.pro : modèles ML Kit inutilisés ignorés');
   return true;
 }
 
@@ -183,6 +193,14 @@ post_install do |installer|
 $_podTargetSettings
   end
 end
+''';
+
+const _proguardRules = '''
+# ML Kit : seuls les sous-titres en alphabet latin sont lus.
+-dontwarn com.google.mlkit.vision.text.chinese.**
+-dontwarn com.google.mlkit.vision.text.devanagari.**
+-dontwarn com.google.mlkit.vision.text.japanese.**
+-dontwarn com.google.mlkit.vision.text.korean.**
 ''';
 
 const _podTargetSettings = '''
