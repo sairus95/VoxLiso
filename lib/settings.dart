@@ -1,5 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'voices.dart';
+
 /// Réglages de l'application, conservés entre deux utilisations.
 class AppSettings {
   AppSettings._(this._prefs);
@@ -63,6 +65,26 @@ class AppSettings {
   /// Analyse par photos successives au lieu du flux vidéo (plus lent, plus robuste).
   bool get photoMode => _prefs.getBool('photoMode') ?? false;
   set photoMode(bool v) => _prefs.setBool('photoMode', v);
+
+  /// Voix choisie pour une langue (null = automatique : la plus naturelle).
+  TtsVoice? voiceFor(String lang) => TtsVoice.fromJson(_prefs.getString('voice_$lang'));
+  void setVoiceFor(String lang, TtsVoice? v) => v == null
+      ? _prefs.remove('voice_$lang')
+      : _prefs.setString('voice_$lang', v.toJson());
+
+  /// Voix du 2e personnage dans les dialogues (null = automatique).
+  TtsVoice? voice2For(String lang) => TtsVoice.fromJson(_prefs.getString('voice2_$lang'));
+  void setVoice2For(String lang, TtsVoice? v) => v == null
+      ? _prefs.remove('voice2_$lang')
+      : _prefs.setString('voice2_$lang', v.toJson());
+
+  /// Une voix différente pour chaque réplique d'un dialogue (« - Oui. » / « - Non. »).
+  bool get dialogueVoices => _prefs.getBool('dialogueVoices') ?? true;
+  set dialogueVoices(bool v) => _prefs.setBool('dialogueVoices', v);
+
+  /// Langue de traduction : '' = pas de traduction, sinon fr / de / es / it.
+  String get translateTo => _prefs.getString('translateTo') ?? '';
+  set translateTo(String v) => _prefs.setString('translateTo', v);
 
   /// Zoom de la caméra.
   double get zoom => _prefs.getDouble('zoom') ?? 1.0;

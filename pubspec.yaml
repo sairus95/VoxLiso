@@ -15,6 +15,7 @@ dependencies:
   camera_android: any
   google_mlkit_text_recognition: ^0.17.1
   google_mlkit_language_id: ^0.15.1
+  google_mlkit_translation: ^0.15.1
   flutter_tts: ^4.2.5
   wakelock_plus: ^1.8.2
   shared_preferences: ^2.3.0

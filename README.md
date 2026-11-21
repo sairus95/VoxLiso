@@ -30,6 +30,9 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
 | Zoom | Pour « rapprocher » une télé éloignée. |
 | Luminosité | À baisser si l'écran de la télé apparaît « brûlé » (blanc) sur l'aperçu. |
+| Voix | Par langue : voix principale et voix du 2e personnage, à écouter avec ▶. Sur iPhone, nom, homme/femme et voix « améliorées » ; sur Android, qualité seulement (écouter pour choisir). Par défaut : la voix la plus naturelle installée. |
+| Une voix par personnage | Dans les dialogues à tirets, la 2e réplique est lue avec une autre voix (ou plus grave s'il n'y en a qu'une). |
+| Traduction | Lire les sous-titres traduits en français, allemand, espagnol ou italien, sur le téléphone. Chaque langue se télécharge une fois (≈30 Mo), ensuite sans internet. |
 | Vitesse de la voix | De x0,5 à x2. |
 | Réactivité | Rapide / Normale / Stable (Stable = moins d'erreurs si le téléphone bouge). |
 | Mode photo | Analyse de vraies photos au lieu de la vidéo : plus lent, mais plus fiable sur certains téléphones. |
@@ -99,6 +102,8 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 | `lib/speech_service.dart` | Synthèse vocale et file d'attente |
 | `lib/languages.dart` | Les 4 langues et leurs voix |
 | `lib/language_detector.dart` | Détection automatique de la langue (ML Kit Language ID) |
+| `lib/voices.dart` | Liste et classement des voix du téléphone, choix du 2e personnage |
+| `lib/translator.dart` | Traduction hors ligne (ML Kit Translation) et téléchargement des langues |
 | `lib/settings.dart`, `lib/settings_sheet.dart` | Réglages enregistrés et écran des réglages |
 | `tool/setup.dart` | Configure les dossiers Android/iOS générés (et installe l'icône) |
 | `tool/icone/`, `assets/launcher/` | Dessin de l'icône et images générées pour Android et iOS |
@@ -106,4 +111,4 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 
 Ajouter une langue à alphabet latin (anglais, portugais…) : une ligne dans `lib/languages.dart`.
 
-Bibliothèques : `camera`, `camera_android`, `google_mlkit_text_recognition`, `google_mlkit_language_id`, `flutter_tts`, `wakelock_plus`, `shared_preferences`.
+Bibliothèques : `camera`, `camera_android`, `google_mlkit_text_recognition`, `google_mlkit_language_id`, `google_mlkit_translation`, `flutter_tts`, `wakelock_plus`, `shared_preferences`.

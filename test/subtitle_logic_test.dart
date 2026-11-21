@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voxliso/language_detector.dart';
 import 'package:voxliso/subtitle_tracker.dart';
 import 'package:voxliso/text_tools.dart';
+import 'package:voxliso/voices.dart';
 
 void main() {
   group('cleanSubtitle', () {
@@ -12,6 +13,20 @@ void main() {
 
     test('sépare les répliques de dialogue', () {
       expect(cleanSubtitle(['- Tu viens ?', '- Non']), 'Tu viens ? Non.');
+      expect(subtitleParts(['- Tu viens ?', '- Non']), ['Tu viens ?', 'Non.']);
+    });
+
+    test('répliques sur une seule ligne', () {
+      expect(subtitleParts(['- ¿Vienes? - No, gracias.']), ['¿Vienes?', 'No, gracias.']);
+    });
+
+    test('une phrase sur deux lignes reste une seule réplique', () {
+      expect(subtitleParts(['Ich habe keine Zeit,', 'weil ich arbeiten muss.']),
+          ['Ich habe keine Zeit, weil ich arbeiten muss.']);
+    });
+
+    test('un tiret dans une phrase ne coupe pas la réplique', () {
+      expect(subtitleParts(['Il est peut-être là - ou pas.']), ['Il est peut-être là - ou pas.']);
     });
 
     test('joint les lignes d\'une même phrase', () {
@@ -84,6 +99,47 @@ void main() {
     test('accepte les codes régionaux', () {
       final d = LanguageDecision('fr');
       expect(d.update('Questa è una frase italiana lunga.', {'it-IT': 0.9}), 'it');
+    });
+  });
+
+  group('VoiceCatalog', () {
+    VoiceCatalog catalog() => VoiceCatalog()
+      ..load([
+        {'name': 'fr-ca-x-cab-local', 'locale': 'fr-CA', 'quality': 'very high', 'network_required': '0', 'features': ''},
+        {'name': 'fr-fr-x-frc-local', 'locale': 'fr-FR', 'quality': 'high', 'network_required': '0', 'features': ''},
+        {'name': 'fr-fr-x-frd-local', 'locale': 'fr-FR', 'quality': 'very high', 'network_required': '0', 'features': ''},
+        {'name': 'fr-fr-x-fre-network', 'locale': 'fr-FR', 'quality': 'very high', 'network_required': '1', 'features': ''},
+        {'name': 'de-de-x-deb-local', 'locale': 'de-DE', 'quality': 'normal', 'network_required': '0', 'features': 'notInstalled'},
+        {'name': 'Amélie', 'locale': 'fr-FR', 'quality': 'enhanced', 'gender': 'female', 'identifier': 'a'},
+        {'name': 'Thomas', 'locale': 'fr-FR', 'quality': 'default', 'gender': 'male', 'identifier': 't'},
+      ]);
+
+    test('meilleure voix : hors ligne, accent de France, puis qualité', () {
+      expect(catalog().best('fr')!.name, 'fr-fr-x-frd-local');
+    });
+
+    test('voix non installée ou en ligne écartée du choix automatique', () {
+      expect(catalog().best('de'), isNull);
+    });
+
+    test('2e personnage : genre opposé quand il est connu', () {
+      final c = catalog();
+      final amelie = c.voicesFor('fr').firstWhere((v) => v.name == 'Amélie');
+      expect(c.secondVoice('fr', amelie)!.name, 'Thomas');
+    });
+
+    test('2e personnage : une autre voix de la même région sinon', () {
+      final c = catalog();
+      final second = c.secondVoice('fr', c.best('fr'));
+      expect(second!.key, isNot(c.best('fr')!.key));
+      expect(second.locale, 'fr-FR');
+    });
+
+    test('libellés lisibles', () {
+      final labels = catalog().labelsFor('fr');
+      expect(labels['fr-fr-x-frd-local|fr-FR'], startsWith('Voix 1'));
+      expect(labels['Amélie|fr-FR'], contains('Femme'));
+      expect(labels['fr-fr-x-fre-network|fr-FR'], contains('internet'));
     });
   });
 }

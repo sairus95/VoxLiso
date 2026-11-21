@@ -16,6 +16,8 @@ import 'settings_sheet.dart';
 import 'speech_service.dart';
 import 'subtitle_tracker.dart';
 import 'text_tools.dart';
+import 'translator.dart';
+import 'voices.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key, required this.settings});
@@ -50,6 +52,17 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   double _minExposure = 0;
   double _maxExposure = 0;
   String _lastSpoken = '';
+
+  /// Texte d'origine quand [_lastSpoken] est une traduction.
+  String _lastOriginal = '';
+  String? _translateWarning;
+
+  final VoiceCatalog _catalog = VoiceCatalog();
+  final SubtitleTranslator _translator = SubtitleTranslator();
+
+  /// Les sous-titres sont traités l'un après l'autre (détection de langue,
+  /// traduction) pour être dits dans l'ordre.
+  Future<void> _speakChain = Future<void>.value();
   String? _error;
   bool _voiceMissing = false;
 
@@ -72,6 +85,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   Future<void> _start() async {
     await _speech.init();
+    _catalog.load(await _speech.rawVoices());
+    _translator.refresh();
     await _applyVoice();
     await _initCamera();
   }
@@ -328,18 +343,20 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     });
 
     if (_reading) {
-      final text = cleanSubtitle(
+      final parts = subtitleParts(
         lines.map((l) => l.text).toList(),
         removeSoundTags: s.removeSoundTags,
       );
+      final text = parts.join(' ');
       final toSay = _tracker.push(text);
       if (toSay != null && toSay.trim().isNotEmpty) {
-        setState(() => _lastSpoken = toSay);
-        if (s.autoLang) {
-          _sayDetected(text, toSay);
-        } else {
-          _speech.say(toSay);
-        }
+        // Répliques séparées seulement si tout le sous-titre est nouveau
+        // (pas pour la fin d'un sous-titre « en direct » qui défile).
+        final segments =
+            s.dialogueVoices && parts.length > 1 && toSay == text ? parts : [toSay];
+        _speakChain = _speakChain
+            .then((_) => _speakSubtitle(text, segments))
+            .catchError((Object _) {});
       }
     }
     return (all: all, inZone: lines);
@@ -492,18 +509,71 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
   }
 
-  /// Mode Auto : identifie la langue sur le sous-titre complet, puis le dit
-  /// avec la voix correspondante.
-  Future<void> _sayDetected(String fullText, String toSay) async {
+  // ------------------------------------------------------ voix et langue
+
+  /// Voix principale d'une langue : celle choisie, sinon la plus naturelle.
+  TtsVoice? _primaryVoice(String lang) => s.voiceFor(lang) ?? _catalog.best(lang);
+
+  /// Voix du 2e personnage : celle choisie, sinon une autre voix de la langue,
+  /// sinon la même voix en plus grave.
+  ({TtsVoice? voice, double pitch}) _secondVoice(String lang) {
+    final first = _primaryVoice(lang);
+    final second = s.voice2For(lang) ?? _catalog.secondVoice(lang, first);
+    if (second == null || second.key == first?.key) return (voice: first, pitch: 0.8);
+    return (voice: second, pitch: 1.0);
+  }
+
+  /// Identifie la langue (mode Auto), traduit si demandé, puis dit le
+  /// sous-titre : une voix par réplique dans les dialogues.
+  Future<void> _speakSubtitle(String fullText, List<String> segments) async {
     final before = _langDetector.current;
-    final code = await _langDetector.detect(fullText);
+    final lang = s.autoLang ? await _langDetector.detect(fullText) : s.lang;
     if (_closed || !_reading) return;
-    final lang = languageFor(code);
-    _speech.say(toSay, locale: lang.ttsLocale);
-    if (code != before) {
-      s.detectedLang = code;
-      final ok = await _speech.isAvailable(lang.ttsLocale);
+    if (s.autoLang && lang != before) {
+      s.detectedLang = lang;
+      final ok = await _speech.isAvailable(languageFor(lang).ttsLocale);
       if (mounted && !_closed) setState(() => _voiceMissing = !ok);
+    }
+
+    var speakLang = lang;
+    var out = segments;
+    String? warning;
+    final target = s.translateTo;
+    if (target.isNotEmpty && target != lang) {
+      final translated = <String>[];
+      for (final seg in segments) {
+        final t = await _translator.translate(seg, lang, target);
+        if (t == null) break;
+        translated.add(t);
+      }
+      if (translated.length == segments.length) {
+        out = translated;
+        speakLang = target;
+      } else {
+        warning = 'Traduction impossible : téléchargez ${languageFor(lang).label} et '
+            '${languageFor(target).label} dans les réglages (section Traduction).';
+      }
+    }
+    if (_closed || !_reading) return;
+
+    final locale = languageFor(speakLang).ttsLocale;
+    final first = _primaryVoice(speakLang);
+    final second = _secondVoice(speakLang);
+    _speech.sayAll([
+      for (var i = 0; i < out.length; i++)
+        Utterance(
+          out[i],
+          locale: locale,
+          voice: i.isOdd ? second.voice : first,
+          pitch: i.isOdd ? second.pitch : 1.0,
+        ),
+    ]);
+    if (mounted && !_closed) {
+      setState(() {
+        _lastSpoken = out.join(' ');
+        _lastOriginal = speakLang != lang ? segments.join(' ') : '';
+        _translateWarning = warning;
+      });
     }
   }
 
@@ -556,6 +626,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   Future<void> _openSettings() async {
     final wasPhoto = s.photoMode;
+    // De nouvelles voix ont pu être installées depuis le dernier passage.
+    _catalog.load(await _speech.rawVoices());
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -564,8 +637,17 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         settings: s,
         voice: _voice,
         voiceMissing: _voiceMissing,
+        catalog: _catalog,
+        translator: _translator,
+        primaryVoice: _primaryVoice,
+        secondVoice: _secondVoice,
         onVoiceChanged: _applyVoice,
-        onTestVoice: () => _speech.say(_voice.sample, locale: _voice.ttsLocale),
+        onPreviewVoice: (lang, voice, pitch) => _speech.say(
+          languageFor(lang).sample,
+          locale: languageFor(lang).ttsLocale,
+          voice: voice,
+          pitch: pitch,
+        ),
         onResetZone: () => setState(s.resetZones),
       ),
     );
@@ -582,6 +664,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _releaseCamera();
     _recognizer.close();
     _langDetector.close();
+    _translator.close();
     _speech.stop();
     WakelockPlus.disable();
     super.dispose();
@@ -783,11 +866,15 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (s.autoLang)
+          if (s.autoLang || s.translateTo.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
-                'Langue détectée : ${_voice.label}',
+                [
+                  if (s.autoLang) 'Langue détectée : ${_voice.label}',
+                  if (s.translateTo.isNotEmpty)
+                    'lu en ${languageFor(s.translateTo).label}',
+                ].join(' · '),
                 style: theme.textTheme.labelMedium
                     ?.copyWith(color: theme.colorScheme.primary),
               ),
@@ -800,6 +887,24 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                 ? theme.textTheme.bodyMedium
                 : theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
+          if (_lastOriginal.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Original : $_lastOriginal',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+          if (_translateWarning != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _translateWarning!,
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+              ),
+            ),
         ],
       ),
     );

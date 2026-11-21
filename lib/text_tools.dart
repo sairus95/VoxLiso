@@ -3,6 +3,7 @@ import 'dart:math' as math;
 final RegExp _soundTags = RegExp(r'\[[^\]]*\]|\([^)]*\)');
 final RegExp _junkChars = RegExp(r'[♪♫#*|_~<>{}\\]');
 final RegExp _dialogueDash = RegExp(r'^[-–—]+\s*');
+final RegExp _inlineDialogue = RegExp(r'(?<=[.!?…])\s+[-–—]\s+');
 final RegExp _letter = RegExp(r'\p{L}', unicode: true);
 final RegExp _endsWithPunct = RegExp(r'[.!?…:;,]$');
 final RegExp _spaces = RegExp(r'\s+');
@@ -13,11 +14,25 @@ final RegExp _spaces = RegExp(r'\s+');
 /// - retire les symboles parasites (♪, |, #…),
 /// - écarte les lignes qui ne ressemblent pas à du texte (bruit de l'OCR),
 /// - sépare les répliques de dialogue (« - Oui. » / « - Non. ») par une pause.
-String cleanSubtitle(List<String> lines, {bool removeSoundTags = true}) {
+String cleanSubtitle(List<String> lines, {bool removeSoundTags = true}) =>
+    subtitleParts(lines, removeSoundTags: removeSoundTags).join(' ');
+
+/// Comme [cleanSubtitle], mais renvoie chaque réplique séparément :
+/// « - Tu viens ? » / « - Non » donne ['Tu viens ?', 'Non.'].
+List<String> subtitleParts(List<String> lines, {bool removeSoundTags = true}) {
   final parts = <String>[];
   var buffer = '';
 
+  // « - Oui. - Non. » sur une seule ligne : on sépare les répliques.
+  final expanded = <String>[];
   for (final raw in lines) {
+    final pieces = raw.split(_inlineDialogue);
+    for (var i = 0; i < pieces.length; i++) {
+      expanded.add(i == 0 ? pieces[i] : '- ${pieces[i]}');
+    }
+  }
+
+  for (final raw in expanded) {
     var line = raw.trim();
     if (removeSoundTags) line = line.replaceAll(_soundTags, ' ');
     line = line.replaceAll(_junkChars, ' ').replaceAll(_spaces, ' ').trim();
@@ -40,7 +55,10 @@ String cleanSubtitle(List<String> lines, {bool removeSoundTags = true}) {
       if (!_endsWithPunct.hasMatch(parts[i])) parts[i] = '${parts[i]}.';
     }
   }
-  return parts.join(' ').replaceAll(_spaces, ' ').trim();
+  return [
+    for (final p in parts)
+      if (p.trim().isNotEmpty) p.replaceAll(_spaces, ' ').trim(),
+  ];
 }
 
 bool _looksLikeText(String line) {
