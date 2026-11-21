@@ -1,4 +1,4 @@
-name: voix_sous_titres
+name: voxliso
 description: "Lit les sous-titres affichés sur une télé ou un écran d'ordinateur et les dit à voix haute."
 publish_to: 'none'
 version: 1.0.0+1

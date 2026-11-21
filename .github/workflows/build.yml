@@ -40,7 +40,7 @@ jobs:
           }
           EOF
       - name: Générer les dossiers Android/iOS
-        run: flutter create --platforms=android,ios --org com.voixsoustitres --project-name voix_sous_titres .
+        run: flutter create --platforms=android,ios --org com.voxliso --project-name voxliso .
       - name: Configurer (caméra, voix, versions minimales)
         run: dart run tool/setup.dart
       - run: flutter pub get
@@ -50,15 +50,15 @@ jobs:
         run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
-          name: voix-sous-titres-android
+          name: voxliso-android
           path: build/app/outputs/flutter-apk/app-release.apk
       - name: Publier l'APK dans « Releases » (téléchargement direct sur le téléphone)
         if: github.ref == 'refs/heads/main'
         run: |
-          cp build/app/outputs/flutter-apk/app-release.apk VoixSousTitres.apk
-          gh release create "v1.0.${{ github.run_number }}" VoixSousTitres.apk \
-            --title "Voix Sous-Titres 1.0.${{ github.run_number }}" \
-            --notes "Ouvrez cette page sur votre téléphone Android et touchez VoixSousTitres.apk pour l'installer." \
+          cp build/app/outputs/flutter-apk/app-release.apk VoxLiso.apk
+          gh release create "v1.0.${{ github.run_number }}" VoxLiso.apk \
+            --title "VoxLiso 1.0.${{ github.run_number }}" \
+            --notes "Ouvrez cette page sur votre téléphone Android et touchez VoxLiso.apk pour l'installer." \
             --latest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -73,7 +73,7 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: flutter create --platforms=android,ios --org com.voixsoustitres --project-name voix_sous_titres .
+      - run: flutter create --platforms=android,ios --org com.voxliso --project-name voxliso .
       - run: dart run tool/setup.dart
       - run: flutter pub get
       - name: Compiler pour iPhone (sans signature)

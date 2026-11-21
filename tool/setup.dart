@@ -1,13 +1,13 @@
 // Configure les dossiers android/ et ios/ générés par `flutter create`.
 //
 // Utilisation (depuis le dossier du projet) :
-//   flutter create --platforms=android,ios --org com.voixsoustitres .
+//   flutter create --platforms=android,ios --org com.voxliso .
 //   dart run tool/setup.dart
 //
 // Le script peut être relancé sans risque : il ne modifie que ce qui manque.
 import 'dart:io';
 
-const appName = 'Voix Sous-Titres';
+const appName = 'VoxLiso';
 const iosTarget = '15.5'; // minimum exigé par ML Kit
 const androidMinSdk = 24; // minimum exigé par le plugin camera
 

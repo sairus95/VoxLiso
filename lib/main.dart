@@ -9,11 +9,11 @@ Future<void> main() async {
   // L'analyse de l'image suppose un téléphone tenu en portrait.
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   final settings = await AppSettings.load();
-  runApp(VoixSousTitresApp(settings: settings));
+  runApp(VoxLisoApp(settings: settings));
 }
 
-class VoixSousTitresApp extends StatelessWidget {
-  const VoixSousTitresApp({super.key, required this.settings});
+class VoxLisoApp extends StatelessWidget {
+  const VoxLisoApp({super.key, required this.settings});
   final AppSettings settings;
 
   @override
@@ -23,7 +23,7 @@ class VoixSousTitresApp extends StatelessWidget {
       brightness: Brightness.dark,
     );
     return MaterialApp(
-      title: 'Voix Sous-Titres',
+      title: 'VoxLiso',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(colorScheme: scheme, useMaterial3: true),
       home: ReaderScreen(settings: settings),

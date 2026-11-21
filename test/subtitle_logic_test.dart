@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:voix_sous_titres/subtitle_tracker.dart';
-import 'package:voix_sous_titres/text_tools.dart';
+import 'package:voxliso/subtitle_tracker.dart';
+import 'package:voxliso/text_tools.dart';
 
 void main() {
   group('cleanSubtitle', () {

@@ -128,7 +128,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     } on CameraException catch (e) {
       _setError(e.code.contains('Access') || e.code.contains('ermission')
           ? "L'accès à la caméra a été refusé.\n"
-              "Autorisez-le dans Réglages > Applications > Voix Sous-Titres > Autorisations, puis réessayez."
+              "Autorisez-le dans Réglages > Applications > VoxLiso > Autorisations, puis réessayez."
           : 'Erreur caméra : ${e.description ?? e.code}');
     } catch (e) {
       _setError('Erreur au démarrage de la caméra : $e');
@@ -310,7 +310,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Voix Sous-Titres'),
+        title: const Text('VoxLiso'),
         actions: [
           IconButton(
             tooltip: 'Réglages',

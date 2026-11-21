@@ -1,4 +1,4 @@
-# Voix Sous-Titres
+# VoxLiso
 
 Application **Android et iPhone** qui lit à voix haute les sous-titres affichés sur une télévision ou un écran d'ordinateur.
 
@@ -37,22 +37,22 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 ## Obtenir l'application
 
 ### Télécharger l'APK Android déjà compilé
-Sur le téléphone Android, ouvrez **https://github.com/sairus95/VoxLiso/releases/latest**, touchez **VoixSousTitres.apk**, puis autorisez « l'installation depuis cette source ». Chaque modification envoyée sur GitHub recompile l'application et publie une nouvelle version à cette adresse.
+Sur le téléphone Android, ouvrez **https://github.com/sairus95/VoxLiso/releases/latest**, touchez **VoxLiso.apk**, puis autorisez « l'installation depuis cette source ». Chaque modification envoyée sur GitHub recompile l'application et publie une nouvelle version à cette adresse.
 
 ### Option A — Android, compiler sur votre propre compte GitHub
 1. Créez un compte gratuit sur [github.com](https://github.com) et un nouveau dépôt (« New repository »).
 2. Envoyez-y le contenu de ce dossier (bouton « Add file » > « Upload files », glissez tous les fichiers, y compris le dossier `.github`).
    Si le dossier `.github` n'apparaît pas (dossier caché sur Mac/Windows) : « Add file » > « Create new file », tapez le nom `.github/workflows/build.yml` et collez-y le contenu de ce fichier.
 3. Ouvrez l'onglet **Actions** : la compilation démarre toute seule (≈10 min).
-4. Cliquez sur l'exécution terminée, puis téléchargez **voix-sous-titres-android** dans « Artifacts ». Dézippez : vous obtenez `app-release.apk`.
+4. Cliquez sur l'exécution terminée, puis téléchargez **voxliso-android** dans « Artifacts ». Dézippez : vous obtenez `app-release.apk`.
 5. Envoyez l'APK sur le téléphone Android, ouvrez-le et autorisez « l'installation depuis cette source ».
 
 ### Option B — Sur votre ordinateur (Android et iPhone)
 Prérequis : [Flutter](https://docs.flutter.dev/get-started/install) (version 3.44 ou plus récente). Pour l'iPhone : un **Mac** avec **Xcode**.
 
 ```bash
-cd voix_sous_titres
-flutter create --platforms=android,ios --org com.voixsoustitres --project-name voix_sous_titres .
+cd VoxLiso
+flutter create --platforms=android,ios --org com.voxliso --project-name voxliso .
 dart run tool/setup.dart        # ajoute les autorisations caméra / voix et les versions minimales
 flutter pub get
 flutter test                    # vérifie la logique de détection des sous-titres
