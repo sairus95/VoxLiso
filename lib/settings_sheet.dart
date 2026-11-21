@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'languages.dart';
 import 'settings.dart';
 import 'translator.dart';
+import 'version.dart';
 import 'voices.dart';
 
 class SettingsSheet extends StatefulWidget {
@@ -365,5 +366,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
           icon: const Icon(Icons.crop_free),
           label: const Text('Remettre la zone des sous-titres par défaut'),
         ),
+        const SizedBox(height: 8),
+        Text('VoxLiso version $kAppVersion', style: theme.textTheme.bodySmall),
       ];
 }

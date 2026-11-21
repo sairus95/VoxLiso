@@ -61,7 +61,7 @@ jobs:
             echo "::warning::Secret ANDROID_KEYSTORE_B64 absent : clé temporaire, il faudra désinstaller avant chaque mise à jour."
           fi
       - name: Compiler l'APK
-        run: flutter build apk --release
+        run: flutter build apk --release --dart-define=APP_VERSION=1.0.${{ github.run_number }}
       - uses: actions/upload-artifact@v4
         with:
           name: voxliso-android
@@ -92,7 +92,7 @@ jobs:
       - run: flutter pub get
       - name: Compiler pour iPhone (sans signature)
         run: |
-          if ! flutter build ios --release --no-codesign --verbose > ios-build.log 2>&1; then
+          if ! flutter build ios --release --no-codesign --dart-define=APP_VERSION=1.0.${{ github.run_number }} --verbose > ios-build.log 2>&1; then
             echo "----- Erreurs Xcode -----"
             grep -nE "error:|\*\* BUILD FAILED|Error \(Xcode\)|requires a development team|Signing for" ios-build.log | head -60
             echo "----- Fin du journal -----"

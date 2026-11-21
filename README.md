@@ -32,6 +32,7 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 |---|---|
 | Langue (Auto / FR / DE / ES / IT) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Sinon, la langue choisie est imposée. |
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
+| Aperçu 16:9 | L'aperçu de la caméra est au format des télés (16:9), en portrait comme en paysage. |
 | Zoom | Pour « rapprocher » une télé éloignée. |
 | Luminosité | À baisser si l'écran de la télé apparaît « brûlé » (blanc) sur l'aperçu. |
 | Voix | Par langue : voix principale et voix du 2e personnage, à écouter avec ▶. Sur iPhone, nom, homme/femme et voix « améliorées » ; sur Android, qualité seulement (écouter pour choisir). Par défaut : la voix la plus naturelle installée. |

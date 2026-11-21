@@ -20,6 +20,7 @@ import 'subtitle_tracker.dart';
 import 'text_tools.dart';
 import 'translator.dart';
 import 'tutorial.dart';
+import 'version.dart';
 import 'voices.dart';
 
 class ReaderScreen extends StatefulWidget {
@@ -36,6 +37,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   late final SubtitleTracker _tracker;
   late final LanguageDetector _langDetector;
   bool _locking = false;
+
+  /// Orientation de l'interface (mise à jour à chaque affichage).
+  bool _uiLandscape = false;
 
   CameraController? _controller;
   CameraDescription? _camera;
@@ -224,13 +228,40 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   // paysage du bon côté. Si la rotation automatique du téléphone est
   // désactivée, l'interface reste en portrait et l'image aussi.
 
+  /// Orientation utilisée pour l'analyse et l'aperçu. Elle suit l'interface :
+  /// portrait = portrait (comme en 1.0.14, quoi que dise le module caméra) ;
+  /// paysage = le côté indiqué par le capteur.
   DeviceOrientation get _orientation {
+    if (!_uiLandscape) return DeviceOrientation.portraitUp;
     final c = _controller;
-    if (c == null) return DeviceOrientation.portraitUp;
-    return c.value.lockedCaptureOrientation ?? c.value.deviceOrientation;
+    if (c != null) {
+      final d = c.value.deviceOrientation;
+      if (isLandscape(d)) return d;
+      final l = c.value.lockedCaptureOrientation;
+      if (l != null && isLandscape(l)) return l;
+    }
+    return DeviceOrientation.landscapeLeft;
   }
 
   bool get _landscape => isLandscape(_orientation);
+
+  /// Partie de l'image caméra visible dans l'aperçu 16:9 (fractions 0..1,
+  /// image « à l'endroit »). Identité si la caméra filme déjà en 16:9.
+  ({double ox, double oy, double vw, double vh}) get _crop {
+    const full = (ox: 0.0, oy: 0.0, vw: 1.0, vh: 1.0);
+    final c = _controller;
+    if (c == null || !c.value.isInitialized) return full;
+    final ar = c.value.aspectRatio; // largeur / hauteur, capteur en paysage
+    final image = _landscape ? ar : 1 / ar;
+    final display = _landscape ? 16 / 9 : 9 / 16;
+    if ((image - display).abs() < 0.01) return full;
+    if (image > display) {
+      final vw = display / image;
+      return (ox: (1 - vw) / 2, oy: 0.0, vw: vw, vh: 1.0);
+    }
+    final vh = image / display;
+    return (ox: 0.0, oy: (1 - vh) / 2, vw: 1.0, vh: vh);
+  }
 
   double get _roiTop => _landscape ? s.roiTopLandscape : s.roiTop;
   double get _roiBottom => _landscape ? s.roiBottomLandscape : s.roiBottom;
@@ -248,19 +279,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   void _syncOrientation() {
     final c = _controller;
     if (c == null || !c.value.isInitialized || !mounted || _closed || _locking) return;
-    final uiLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
-    final device = c.value.deviceOrientation;
+    _uiLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
     final locked = c.value.lockedCaptureOrientation;
-    DeviceOrientation want;
-    if (!uiLandscape) {
-      want = DeviceOrientation.portraitUp;
-    } else if (isLandscape(device)) {
-      want = device;
-    } else if (locked != null && isLandscape(locked)) {
-      want = locked;
-    } else {
-      want = DeviceOrientation.landscapeLeft;
-    }
+    final want = _orientation;
     if (locked == want) return;
     _locking = true;
     c.lockCaptureOrientation(want).catchError((_) {}).whenComplete(() {
@@ -332,16 +353,22 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   ) {
     final w = upright.width;
     final h = upright.height;
-    final top = _roiTop * h;
-    final bottom = _roiBottom * h;
+    final crop = _crop;
+    // Bande jaune (fractions de l'aperçu 16:9) -> pixels de l'image analysée.
+    final top = (crop.oy + _roiTop * crop.vh) * h;
+    final bottom = (crop.oy + _roiBottom * crop.vh) * h;
+    final left = crop.ox * w;
+    final right = (crop.ox + crop.vw) * w;
 
     final all = <TextLine>[];
     final lines = <TextLine>[];
     for (final block in result.blocks) {
       for (final line in block.lines) {
+        final r = line.boundingBox;
+        // Hors de l'aperçu 16:9 : ni affichée ni lue.
+        if (r.center.dx < left || r.center.dx > right) continue;
         all.add(line);
         // Gardée si au moins la moitié de sa hauteur est dans la bande jaune.
-        final r = line.boundingBox;
         final overlap = math.min(r.bottom, bottom) - math.max(r.top, top);
         if (r.height > 0 && overlap >= r.height * 0.5) lines.add(line);
       }
@@ -356,7 +383,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       return dy < 0 ? -1 : 1;
     });
 
-    Rect frac(Rect r) => Rect.fromLTRB(r.left / w, r.top / h, r.right / w, r.bottom / h);
+    // Pixels de l'image -> fractions de l'aperçu 16:9 (pour les cadres).
+    Rect frac(Rect r) => Rect.fromLTRB(
+          (r.left / w - crop.ox) / crop.vw,
+          (r.top / h - crop.oy) / crop.vh,
+          (r.right / w - crop.ox) / crop.vw,
+          (r.bottom / h - crop.oy) / crop.vh,
+        );
     final boxes = [
       for (final l in all) DetectedBox(frac(l.boundingBox), lines.contains(l)),
     ];
@@ -364,7 +397,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     setState(() {
       _boxes = boxes;
       _textOutsideOnly = lines.isEmpty && all.isNotEmpty;
-      _diag = '${s.photoMode ? 'Mode photo · ' : ''}$info · ${w.toInt()}×${h.toInt()} · ${ms}ms\n'
+      _diag = 'v$kAppVersion · ${_landscape ? 'paysage' : 'portrait'} · '
+          '${s.photoMode ? 'Mode photo · ' : ''}$info · ${w.toInt()}×${h.toInt()} · ${ms}ms\n'
           'Texte trouvé : ${all.length} ligne(s), ${lines.length} dans la zone'
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
     });
@@ -864,6 +898,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final landscapeUi = MediaQuery.orientationOf(context) == Orientation.landscape;
+    _uiLandscape = landscapeUi;
     final banner = _voiceMissing
         ? MaterialBanner(
             content: Text(
@@ -1098,10 +1133,34 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   }
 
   Widget _buildPreviewContent(CameraController c) {
+    final o = _orientation;
+    final land = isLandscape(o);
+    final ar = c.value.aspectRatio;
+    // Sur Android, l'image du module caméra doit être tournée selon l'orientation
+    // (comme le fait CameraPreview) ; sur iPhone elle l'est déjà.
+    final turns = Platform.isAndroid
+        ? const {
+              DeviceOrientation.portraitUp: 0,
+              DeviceOrientation.landscapeRight: 1,
+              DeviceOrientation.portraitDown: 2,
+              DeviceOrientation.landscapeLeft: 3,
+            }[o] ??
+            0
+        : 0;
+    final imageAspect = land ? ar : 1 / ar;
     return AspectRatio(
-      aspectRatio: _landscape ? c.value.aspectRatio : 1 / c.value.aspectRatio,
+      aspectRatio: land ? 16 / 9 : 9 / 16,
       child: Stack(fit: StackFit.expand, children: [
-        CameraPreview(c),
+        ClipRect(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: 1000 * imageAspect,
+              height: 1000,
+              child: RotatedBox(quarterTurns: turns, child: c.buildPreview()),
+            ),
+          ),
+        ),
         RoiOverlay(
           top: _roiTop,
           bottom: _roiBottom,
