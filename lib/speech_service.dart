@@ -42,7 +42,7 @@ class SpeechService {
     } catch (_) {}
     await _tts.setLanguage(locale);
     // flutter_tts : 0.5 = vitesse normale sur Android comme sur iOS.
-    await _tts.setSpeechRate((0.5 * rate).clamp(0.1, 1.0));
+    await _tts.setSpeechRate((0.5 * rate).clamp(0.1, 1.0).toDouble());
     return available;
   }
 

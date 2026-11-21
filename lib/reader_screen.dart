@@ -108,7 +108,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       try {
         _minZoom = await c.getMinZoomLevel();
         _maxZoom = math.min(await c.getMaxZoomLevel(), 8.0);
-        _zoom = _zoom.clamp(_minZoom, math.max(_minZoom, _maxZoom));
+        final double zoomMax = math.max(_minZoom, _maxZoom);
+        _zoom = _zoom.clamp(_minZoom, zoomMax).toDouble();
         await c.setZoomLevel(_zoom);
       } catch (_) {
         _minZoom = 1.0;
@@ -439,7 +440,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       const Icon(Icons.zoom_out),
       Expanded(
         child: Slider(
-          value: _zoom.clamp(_minZoom, _maxZoom),
+          value: _zoom.clamp(_minZoom, _maxZoom).toDouble(),
           min: _minZoom,
           max: _maxZoom,
           label: 'x${_zoom.toStringAsFixed(1)}',

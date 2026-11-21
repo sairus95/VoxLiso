@@ -72,7 +72,7 @@ class RoiOverlay extends StatelessWidget {
           w: w,
           label: 'Bord haut de la zone',
           onDrag: (dy) => onChanged(
-            (top + dy / h).clamp(0.0, bottom - _minBand),
+            (top + dy / h).clamp(0.0, bottom - _minBand).toDouble(),
             bottom,
           ),
         ),
@@ -83,7 +83,7 @@ class RoiOverlay extends StatelessWidget {
           label: 'Bord bas de la zone',
           onDrag: (dy) => onChanged(
             top,
-            (bottom + dy / h).clamp(top + _minBand, 1.0),
+            (bottom + dy / h).clamp(top + _minBand, 1.0).toDouble(),
           ),
         ),
         Positioned(
@@ -114,7 +114,8 @@ class RoiOverlay extends StatelessWidget {
     required String label,
     required void Function(double dy) onDrag,
   }) {
-    final topPos = (y - _handle / 2).clamp(0.0, math.max(0.0, h - _handle));
+    final double maxTop = math.max(0.0, h - _handle);
+    final double topPos = (y - _handle / 2).clamp(0.0, maxTop).toDouble();
     return Positioned(
       left: 0,
       width: w,
