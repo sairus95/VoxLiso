@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
@@ -35,6 +35,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   bool _closed = false;
   bool _busy = false;
   bool _reading = false;
+  int _photoLoopId = 0;
   DateTime _lastFrame = DateTime.fromMillisecondsSinceEpoch(0);
 
   List<DetectedBox> _boxes = const [];
@@ -131,7 +132,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _minExposure = 0;
         _maxExposure = 0;
       }
-      await c.startImageStream(_onFrame);
+      if (!s.photoMode) await c.startImageStream(_onFrame);
       if (_closed || !mounted) {
         await c.dispose();
         return;
@@ -140,6 +141,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _controller = c;
         _error = null;
       });
+      if (s.photoMode) _startPhotoLoop();
     } on CameraException catch (e) {
       _setError(e.code.contains('Access') || e.code.contains('ermission')
           ? "L'accès à la caméra a été refusé.\n"
@@ -157,6 +159,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   }
 
   Future<void> _releaseCamera() async {
+    _stopPhotoLoop();
     final c = _controller;
     _controller = null;
     if (mounted && !_closed) setState(() => _boxes = const []);
@@ -211,9 +214,19 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     if (_closed || !mounted) return;
     final ms = DateTime.now().difference(started).inMilliseconds;
+    _handleResult(result, frame.uprightSize, info, ms);
+  }
 
-    final w = frame.uprightSize.width;
-    final h = frame.uprightSize.height;
+  /// Exploite le résultat de l'OCR (flux vidéo ou photo) : cadres, diagnostic, lecture.
+  /// Renvoie les lignes trouvées et celles retenues dans la zone.
+  ({List<TextLine> all, List<TextLine> inZone}) _handleResult(
+    RecognizedText result,
+    Size upright,
+    String info,
+    int ms,
+  ) {
+    final w = upright.width;
+    final h = upright.height;
     final top = s.roiTop * h;
     final bottom = s.roiBottom * h;
 
@@ -246,21 +259,166 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     setState(() {
       _boxes = boxes;
       _textOutsideOnly = lines.isEmpty && all.isNotEmpty;
-      _diag = '$info · ${frame.uprightSize.width.toInt()}×${frame.uprightSize.height.toInt()} · ${ms}ms\n'
+      _diag = '${s.photoMode ? 'Mode photo · ' : ''}$info · ${w.toInt()}×${h.toInt()} · ${ms}ms\n'
           'Texte trouvé : ${all.length} ligne(s), ${lines.length} dans la zone'
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
     });
 
-    if (!_reading) return;
-    final text = cleanSubtitle(
-      lines.map((l) => l.text).toList(),
-      removeSoundTags: s.removeSoundTags,
-    );
-    final toSay = _tracker.push(text);
-    if (toSay != null && toSay.trim().isNotEmpty) {
-      _speech.say(toSay);
-      setState(() => _lastSpoken = toSay);
+    if (_reading) {
+      final text = cleanSubtitle(
+        lines.map((l) => l.text).toList(),
+        removeSoundTags: s.removeSoundTags,
+      );
+      final toSay = _tracker.push(text);
+      if (toSay != null && toSay.trim().isNotEmpty) {
+        _speech.say(toSay);
+        setState(() => _lastSpoken = toSay);
+      }
     }
+    return (all: all, inZone: lines);
+  }
+
+  // ------------------------------------------------------------ mode photo
+  //
+  // Au lieu du flux vidéo, on prend de vraies photos (mise au point et
+  // exposition calculées par le téléphone, orientation gérée par le fichier).
+  // Plus lent, mais indépendant du format des images du flux vidéo.
+
+  void _startPhotoLoop() {
+    final id = ++_photoLoopId;
+    () async {
+      while (!_closed && id == _photoLoopId) {
+        final c = _controller;
+        if (c == null || !c.value.isInitialized) break;
+        final started = DateTime.now();
+        if (!_busy) {
+          _busy = true;
+          try {
+            final r = await _ocrPhoto(c);
+            if (id == _photoLoopId && !_closed && mounted) {
+              _handleResult(r.result, r.upright, r.info, r.ms);
+            }
+          } catch (e) {
+            _setDiag('⚠ Mode photo : $e');
+            await Future<void>.delayed(const Duration(seconds: 1));
+          } finally {
+            _busy = false;
+          }
+        }
+        final wait = s.frameInterval - DateTime.now().difference(started);
+        await Future<void>.delayed(
+            wait.isNegative ? const Duration(milliseconds: 30) : wait);
+      }
+    }();
+  }
+
+  void _stopPhotoLoop() => _photoLoopId++;
+
+  Future<({RecognizedText result, Size upright, String info, int ms})> _ocrPhoto(
+      CameraController c) async {
+    final started = DateTime.now();
+    final shot = await c.takePicture();
+    try {
+      final bytes = await File(shot.path).readAsBytes();
+      final result = await _recognizer.processImage(InputImage.fromFilePath(shot.path));
+      final ms = DateTime.now().difference(started).inMilliseconds;
+      final raw = jpegSize(bytes);
+      Size upright;
+      if (raw != null) {
+        // Téléphone en portrait : l'image « à l'endroit » est en hauteur.
+        upright = Size(math.min(raw.width, raw.height), math.max(raw.width, raw.height));
+      } else {
+        final p = c.value.previewSize ?? const Size(1920, 1080);
+        upright = Size(math.min(p.width, p.height), math.max(p.width, p.height));
+      }
+      final info = raw == null
+          ? 'Photo (taille inconnue)'
+          : 'Photo ${raw.width.toInt()}×${raw.height.toInt()}';
+      return (result: result, upright: upright, info: info, ms: ms);
+    } finally {
+      try {
+        File(shot.path).deleteSync();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _waitIdle() async {
+    for (var i = 0; i < 60 && _busy; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+  }
+
+  /// Bascule entre flux vidéo et mode photo selon le réglage.
+  Future<void> _applyAnalysisMode() async {
+    final c = _controller;
+    if (c == null) return;
+    _stopPhotoLoop();
+    await _waitIdle();
+    try {
+      if (s.photoMode) {
+        if (c.value.isStreamingImages) await c.stopImageStream();
+        _startPhotoLoop();
+      } else if (!c.value.isStreamingImages) {
+        await c.startImageStream(_onFrame);
+      }
+    } catch (e) {
+      _setDiag('⚠ Changement de mode : $e');
+    }
+  }
+
+  /// Bouton « Tester sur une photo » : prend une photo, y cherche du texte
+  /// et affiche tout ce qui a été trouvé.
+  Future<void> _testPhoto() async {
+    final c = _controller;
+    if (c == null) return;
+    HapticFeedback.selectionClick();
+    _stopPhotoLoop();
+    await _waitIdle();
+    final wasStreaming = c.value.isStreamingImages;
+    var title = "La photo a échoué";
+    final details = <String>[];
+    _busy = true;
+    try {
+      if (wasStreaming) await c.stopImageStream();
+      final r = await _ocrPhoto(c);
+      final found = _handleResult(r.result, r.upright, r.info, r.ms);
+      title = found.all.isEmpty
+          ? 'Aucun texte trouvé sur la photo'
+          : '${found.all.length} ligne(s) trouvée(s), ${found.inZone.length} dans la bande jaune';
+      for (final l in found.all) {
+        details.add('${found.inZone.contains(l) ? '✅' : '🟧'} ${l.text}');
+      }
+      details.add('\n${r.info} · ${r.ms} ms');
+    } catch (e) {
+      title = 'La photo a échoué';
+      details.add('$e');
+    } finally {
+      _busy = false;
+    }
+    if (!_closed && _controller == c) {
+      try {
+        if (s.photoMode) {
+          _startPhotoLoop();
+        } else if (wasStreaming) {
+          await c.startImageStream(_onFrame);
+        }
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Text(details.isEmpty
+              ? 'Rapprochez-vous ou zoomez, évitez les reflets, puis réessayez.'
+              : details.join('\n')),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
   }
 
   void _setDiag(String text) {
@@ -311,6 +469,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   }
 
   Future<void> _openSettings() async {
+    final wasPhoto = s.photoMode;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -328,6 +487,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
     _speech.interrupt = s.interrupt;
     _tracker.stableFrames = s.stableFrames;
+    if (s.photoMode != wasPhoto) await _applyAnalysisMode();
     if (mounted) setState(() {});
   }
 
@@ -351,6 +511,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       appBar: AppBar(
         title: const Text('VoxLiso'),
         actions: [
+          IconButton(
+            tooltip: 'Tester sur une photo',
+            icon: const Icon(Icons.document_scanner_outlined),
+            onPressed: _controller == null ? null : _testPhoto,
+          ),
           IconButton(
             tooltip: _showDiag ? 'Masquer le diagnostic' : 'Afficher le diagnostic',
             icon: Icon(_showDiag ? Icons.bug_report : Icons.bug_report_outlined),

@@ -10,6 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   camera: ^0.12.2
+  # Android : module Camera2, qui fournit de vraies images NV21 à ML Kit
+  # (le module CameraX par défaut annonce « yuv420 » pour des données NV21).
+  camera_android: any
   google_mlkit_text_recognition: ^0.17.1
   flutter_tts: ^4.2.5
   wakelock_plus: ^1.8.2

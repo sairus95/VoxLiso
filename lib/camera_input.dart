@@ -125,3 +125,37 @@ Uint8List _yuv420ToNv21(CameraImage image) {
   }
   return out;
 }
+
+/// Lit la largeur et la hauteur d'un fichier JPEG (en-tête SOF), sans le décoder.
+Size? jpegSize(Uint8List b) {
+  if (b.length < 4 || b[0] != 0xFF || b[1] != 0xD8) return null;
+  var i = 2;
+  while (i + 9 < b.length) {
+    if (b[i] != 0xFF) {
+      i++;
+      continue;
+    }
+    final marker = b[i + 1];
+    if (marker == 0xFF) {
+      i++;
+      continue;
+    }
+    if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD9)) {
+      i += 2;
+      continue;
+    }
+    final len = (b[i + 2] << 8) | b[i + 3];
+    final isSof = marker >= 0xC0 &&
+        marker <= 0xCF &&
+        marker != 0xC4 &&
+        marker != 0xC8 &&
+        marker != 0xCC;
+    if (isSof) {
+      final h = (b[i + 5] << 8) | b[i + 6];
+      final w = (b[i + 7] << 8) | b[i + 8];
+      return Size(w.toDouble(), h.toDouble());
+    }
+    i += 2 + len;
+  }
+  return null;
+}

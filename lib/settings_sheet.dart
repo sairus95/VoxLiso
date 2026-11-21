@@ -95,6 +95,16 @@ class _SettingsSheetState extends State<SettingsSheet> {
 
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
+              title: const Text('Mode photo'),
+              subtitle: const Text(
+                  'Analyse de vraies photos au lieu de la vidéo : plus lent (≈1 s), '
+                  'mais plus fiable sur certains téléphones. Sur iPhone, un bruit '
+                  "d'appareil photo peut se faire entendre."),
+              value: s.photoMode,
+              onChanged: (v) => setState(() => s.photoMode = v),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
               title: const Text('Couper la phrase en cours'),
               subtitle: const Text(
                   'Quand un nouveau sous-titre apparaît, on passe directement à lui.'),

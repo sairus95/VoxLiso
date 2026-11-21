@@ -38,6 +38,10 @@ class AppSettings {
   int get reactivity => _prefs.getInt('reactivity') ?? 1;
   set reactivity(int v) => _prefs.setInt('reactivity', v);
 
+  /// Analyse par photos successives au lieu du flux vidéo (plus lent, plus robuste).
+  bool get photoMode => _prefs.getBool('photoMode') ?? false;
+  set photoMode(bool v) => _prefs.setBool('photoMode', v);
+
   /// Zoom de la caméra.
   double get zoom => _prefs.getDouble('zoom') ?? 1.0;
   set zoom(double v) => _prefs.setDouble('zoom', v);
