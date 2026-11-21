@@ -36,7 +36,10 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 
 ## Obtenir l'application
 
-### Option A — Android, sans rien installer (le plus simple)
+### Télécharger l'APK Android déjà compilé
+Sur le téléphone Android, ouvrez **https://github.com/sairus95/VoxLiso/releases/latest**, touchez **VoixSousTitres.apk**, puis autorisez « l'installation depuis cette source ». Chaque modification envoyée sur GitHub recompile l'application et publie une nouvelle version à cette adresse.
+
+### Option A — Android, compiler sur votre propre compte GitHub
 1. Créez un compte gratuit sur [github.com](https://github.com) et un nouveau dépôt (« New repository »).
 2. Envoyez-y le contenu de ce dossier (bouton « Add file » > « Upload files », glissez tous les fichiers, y compris le dossier `.github`).
    Si le dossier `.github` n'apparaît pas (dossier caché sur Mac/Windows) : « Add file » > « Create new file », tapez le nom `.github/workflows/build.yml` et collez-y le contenu de ce fichier.
