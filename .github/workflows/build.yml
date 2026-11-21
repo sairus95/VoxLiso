@@ -15,11 +15,28 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
+      - name: Ajouter Maven Central aux dépôts Gradle
+        # Certains composants Kotlin d'outillage Flutter ne sont pas servis par
+        # le portail des plugins Gradle : on autorise aussi Maven Central / Google.
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/depots.gradle <<'EOF'
+          beforeSettings { settings ->
+            settings.pluginManagement.repositories {
+              gradlePluginPortal()
+              mavenCentral()
+              google()
+            }
+          }
+          allprojects {
+            buildscript { repositories { mavenCentral(); google() } }
+          }
+          EOF
       - name: Générer les dossiers Android/iOS
         run: flutter create --platforms=android,ios --org com.voixsoustitres --project-name voix_sous_titres .
       - name: Configurer (caméra, voix, versions minimales)
@@ -48,4 +65,11 @@ jobs:
       - run: dart run tool/setup.dart
       - run: flutter pub get
       - name: Compiler pour iPhone (sans signature)
-        run: flutter build ios --release --no-codesign
+        run: |
+          if ! flutter build ios --release --no-codesign --verbose > ios-build.log 2>&1; then
+            echo "----- Erreurs Xcode -----"
+            grep -nE "error:|\*\* BUILD FAILED|Error \(Xcode\)|requires a development team|Signing for" ios-build.log | head -60
+            echo "----- Fin du journal -----"
+            tail -40 ios-build.log
+            exit 1
+          fi

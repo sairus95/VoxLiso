@@ -123,6 +123,11 @@ bool _ios() {
       RegExp(r"^#?\s*platform :ios, '[\d.]+'", multiLine: true),
       "platform :ios, '$iosTarget'",
     );
+    // Les « bundles » de ressources des pods (ML Kit…) n'ont pas à être signés.
+    const marker = 'flutter_additional_ios_build_settings(target)';
+    if (!pod.contains('CODE_SIGNING_ALLOWED') && pod.contains(marker)) {
+      pod = pod.replaceFirst(marker, '$marker\n$_podTargetSettings');
+    }
     podfile.writeAsStringSync(pod);
   } else {
     podfile.writeAsStringSync(_podfile);
@@ -175,9 +180,15 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
-    target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '$iosTarget'
-    end
+$_podTargetSettings
   end
 end
 ''';
+
+const _podTargetSettings = '''
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '$iosTarget'
+      if target.respond_to?(:product_type) && target.product_type == 'com.apple.product-type.bundle'
+        config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+      end
+    end''';
