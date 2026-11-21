@@ -30,7 +30,8 @@ class SubtitleTranslator {
   final Map<String, bool> _downloaded = {};
   final Set<String> _downloading = {};
 
-  static TranslateLanguage? _lang(String code) => TranslateLanguage.fromRawValue(code);
+  static TranslateLanguage? _lang(String code) =>
+      TranslateLanguage.values.where((l) => l.bcpCode == code).firstOrNull;
 
   /// La traduction hors ligne connaît-elle cette langue ?
   static bool canTranslate(String code) => _lang(code) != null;
