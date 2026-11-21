@@ -46,6 +46,17 @@ jobs:
       - run: flutter pub get
       - name: Tests de la logique des sous-titres
         run: flutter test
+      - name: Clé de signature fixe (mises à jour sans désinstaller)
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            mkdir -p ~/.android
+            echo "$KEYSTORE_B64" | base64 -d > ~/.android/debug.keystore
+            echo "Clé de signature fixe utilisée."
+          else
+            echo "::warning::Secret ANDROID_KEYSTORE_B64 absent : clé temporaire, il faudra désinstaller avant chaque mise à jour."
+          fi
       - name: Compiler l'APK
         run: flutter build apk --release
       - uses: actions/upload-artifact@v4
