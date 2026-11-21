@@ -78,6 +78,27 @@ bool _android() {
   // ML Kit référence les modèles chinois/japonais/coréen/devanagari, que
   // l'application n'utilise pas (alphabet latin seulement) : l'optimiseur R8
   // doit les ignorer. Flutter charge automatiquement android/app/proguard-rules.pro.
+  // Pas de compactage R8 : il retirait des classes de ML Kit appelées par
+  // réflexion (NullPointerException « getClass() » à l'analyse des images).
+  if (!g.contains('isMinifyEnabled = false') && !g.contains('minifyEnabled false')) {
+    final kts = gradle.path.endsWith('.kts');
+    final signRe = RegExp(r'(\n(\s*)signingConfig\s*=?\s*signingConfigs[^\n]*)');
+    final sm = signRe.firstMatch(g);
+    if (sm != null) {
+      final indent = sm.group(2)!;
+      final extra = kts
+          ? '\n${indent}isMinifyEnabled = false\n${indent}isShrinkResources = false'
+          : '\n${indent}minifyEnabled false\n${indent}shrinkResources false';
+      g = g.replaceFirst(signRe, '${sm.group(1)}$extra');
+      gradle.writeAsStringSync(g);
+    }
+  }
+  final props = File('android/gradle.properties');
+  if (props.existsSync() && !props.readAsStringSync().contains('shrink=')) {
+    props.writeAsStringSync('${props.readAsStringSync().trimRight()}\nshrink=false\n');
+  }
+  stdout.writeln('✔ Compactage R8 désactivé');
+
   final proguard = File('android/app/proguard-rules.pro');
   final existing = proguard.existsSync() ? proguard.readAsStringSync() : '';
   if (!existing.contains('com.google.mlkit.vision.text.chinese')) {
@@ -201,6 +222,11 @@ const _proguardRules = '''
 -dontwarn com.google.mlkit.vision.text.devanagari.**
 -dontwarn com.google.mlkit.vision.text.japanese.**
 -dontwarn com.google.mlkit.vision.text.korean.**
+# Au cas où le compactage serait réactivé : ne rien retirer de ML Kit.
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_** { *; }
+-keep class com.google_mlkit_commons.** { *; }
+-keep class com.google_mlkit_text_recognition.** { *; }
 ''';
 
 const _podTargetSettings = '''

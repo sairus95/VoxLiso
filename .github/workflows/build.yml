@@ -42,7 +42,10 @@ jobs:
       - name: Générer les dossiers Android/iOS
         run: flutter create --platforms=android,ios --org com.voxliso --project-name voxliso .
       - name: Configurer (caméra, voix, versions minimales)
-        run: dart run tool/setup.dart
+        run: |
+          dart run tool/setup.dart
+          grep -n -A4 "release {" android/app/build.gradle* || true
+          grep -n "shrink" android/gradle.properties || true
       - run: flutter pub get
       - name: Tests de la logique des sous-titres
         run: flutter test

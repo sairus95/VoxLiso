@@ -633,7 +633,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                 ),
                 child: Text(
                   _diag,
-                  maxLines: 4,
+                  maxLines: _diag.startsWith('⚠') ? 10 : 4,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Colors.white, fontSize: 11, height: 1.3),
                 ),
