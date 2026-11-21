@@ -6,8 +6,8 @@ class AppSettings {
 
   final SharedPreferences _prefs;
 
-  static const double defaultRoiTop = 0.55;
-  static const double defaultRoiBottom = 0.95;
+  static const double defaultRoiTop = 0.40;
+  static const double defaultRoiBottom = 0.80;
 
   static Future<AppSettings> load() async =>
       AppSettings._(await SharedPreferences.getInstance());

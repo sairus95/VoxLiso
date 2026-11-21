@@ -37,7 +37,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   bool _reading = false;
   DateTime _lastFrame = DateTime.fromMillisecondsSinceEpoch(0);
 
-  List<Rect> _boxes = const [];
+  List<DetectedBox> _boxes = const [];
+  String _diag = 'En attente de la première image…';
+  bool _showDiag = true;
+  bool _textOutsideOnly = false;
+
+  double _exposure = 0;
+  double _minExposure = 0;
+  double _maxExposure = 0;
   String _lastSpoken = '';
   String? _error;
   bool _voiceMissing = false;
@@ -89,7 +96,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       );
       final c = CameraController(
         _camera!,
-        ResolutionPreset.high,
+        ResolutionPreset.veryHigh, // 1080p : petits sous-titres plus lisibles
         enableAudio: false,
         imageFormatGroup:
             Platform.isAndroid ? ImageFormatGroup.nv21 : ImageFormatGroup.bgra8888,
@@ -115,6 +122,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _minZoom = 1.0;
         _maxZoom = 1.0;
         _zoom = 1.0;
+      }
+      try {
+        _minExposure = await c.getMinExposureOffset();
+        _maxExposure = await c.getMaxExposureOffset();
+        _exposure = 0;
+      } catch (_) {
+        _minExposure = 0;
+        _maxExposure = 0;
       }
       await c.startImageStream(_onFrame);
       if (_closed || !mounted) {
@@ -179,27 +194,38 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   Future<void> _processFrame(CameraImage image) async {
     final cam = _camera;
     if (cam == null) return;
+    final info = describeCameraImage(image);
     final frame = buildInputImage(image, cam);
-    if (frame == null) return;
+    if (frame == null) {
+      _setDiag('⚠ Format d\'image non pris en charge : $info');
+      return;
+    }
 
     final RecognizedText result;
+    final started = DateTime.now();
     try {
       result = await _recognizer.processImage(frame.image);
-    } catch (_) {
+    } catch (e) {
+      _setDiag('⚠ Erreur de reconnaissance : $e\n$info');
       return;
     }
     if (_closed || !mounted) return;
+    final ms = DateTime.now().difference(started).inMilliseconds;
 
     final w = frame.uprightSize.width;
     final h = frame.uprightSize.height;
-    final top = s.roiTop;
-    final bottom = s.roiBottom;
+    final top = s.roiTop * h;
+    final bottom = s.roiBottom * h;
 
+    final all = <TextLine>[];
     final lines = <TextLine>[];
     for (final block in result.blocks) {
       for (final line in block.lines) {
-        final cy = line.boundingBox.center.dy / h;
-        if (cy >= top && cy <= bottom) lines.add(line);
+        all.add(line);
+        // Gardée si au moins la moitié de sa hauteur est dans la bande jaune.
+        final r = line.boundingBox;
+        final overlap = math.min(r.bottom, bottom) - math.max(r.top, top);
+        if (r.height > 0 && overlap >= r.height * 0.5) lines.add(line);
       }
     }
     // De haut en bas, puis de gauche à droite sur une même ligne.
@@ -212,16 +238,18 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       return dy < 0 ? -1 : 1;
     });
 
+    Rect frac(Rect r) => Rect.fromLTRB(r.left / w, r.top / h, r.right / w, r.bottom / h);
     final boxes = [
-      for (final l in lines)
-        Rect.fromLTRB(
-          l.boundingBox.left / w,
-          l.boundingBox.top / h,
-          l.boundingBox.right / w,
-          l.boundingBox.bottom / h,
-        ),
+      for (final l in all) DetectedBox(frac(l.boundingBox), lines.contains(l)),
     ];
-    setState(() => _boxes = boxes);
+    final rawText = lines.map((l) => l.text).join(' / ');
+    setState(() {
+      _boxes = boxes;
+      _textOutsideOnly = lines.isEmpty && all.isNotEmpty;
+      _diag = '$info · ${frame.uprightSize.width.toInt()}×${frame.uprightSize.height.toInt()} · ${ms}ms\n'
+          'Texte trouvé : ${all.length} ligne(s), ${lines.length} dans la zone'
+          '${rawText.isEmpty ? '' : '\n« $rawText »'}';
+    });
 
     if (!_reading) return;
     final text = cleanSubtitle(
@@ -233,6 +261,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _speech.say(toSay);
       setState(() => _lastSpoken = toSay);
     }
+  }
+
+  void _setDiag(String text) {
+    if (mounted && !_closed) setState(() => _diag = text);
   }
 
   // ---------------------------------------------------------- commandes
@@ -268,6 +300,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     setState(() => _zoom = z);
     try {
       await _controller?.setZoomLevel(z);
+    } catch (_) {}
+  }
+
+  Future<void> _setExposure(double v) async {
+    setState(() => _exposure = v);
+    try {
+      await _controller?.setExposureOffset(v);
     } catch (_) {}
   }
 
@@ -313,6 +352,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         title: const Text('VoxLiso'),
         actions: [
           IconButton(
+            tooltip: _showDiag ? 'Masquer le diagnostic' : 'Afficher le diagnostic',
+            icon: Icon(_showDiag ? Icons.bug_report : Icons.bug_report_outlined),
+            onPressed: () => setState(() => _showDiag = !_showDiag),
+          ),
+          IconButton(
             tooltip: 'Réglages',
             icon: const Icon(Icons.tune),
             onPressed: _openSettings,
@@ -337,6 +381,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
               children: [
                 _buildLastText(theme),
                 if (_maxZoom > _minZoom) _buildZoom(),
+                if (_maxExposure > _minExposure) _buildExposure(),
                 const SizedBox(height: 8),
                 SegmentedButton<String>(
                   segments: [
@@ -409,12 +454,36 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           }),
           onChangeEnd: () {},
         ),
+        if (_showDiag)
+          Positioned(
+            left: 4,
+            right: 4,
+            top: 4,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _diag,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontSize: 11, height: 1.3),
+                ),
+              ),
+            ),
+          ),
       ]),
     );
   }
 
   Widget _buildLastText(ThemeData theme) {
-    final hint = _reading
+    final hint = _textOutsideOnly
+        ? 'Du texte est vu en dehors de la bande jaune (cadres orange) : '
+            'faites glisser la bande dessus.'
+        : _reading
         ? 'En attente d\'un sous-titre…'
         : 'Visez l\'écran, placez la bande jaune sur les sous-titres, puis appuyez sur « Lire ».';
     return Container(
@@ -450,6 +519,25 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         ),
       ),
       const Icon(Icons.zoom_in),
+    ]);
+  }
+
+  Widget _buildExposure() {
+    return Row(children: [
+      const Icon(Icons.brightness_low),
+      Expanded(
+        child: Semantics(
+          label: 'Luminosité de la caméra',
+          child: Slider(
+            value: _exposure.clamp(_minExposure, _maxExposure).toDouble(),
+            min: _minExposure,
+            max: _maxExposure,
+            label: _exposure.toStringAsFixed(1),
+            onChanged: _setExposure,
+          ),
+        ),
+      ),
+      const Icon(Icons.brightness_high),
     ]);
   }
 }

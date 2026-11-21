@@ -44,7 +44,7 @@ FrameInput? buildInputImage(CameraImage image, CameraDescription camera) {
 
   final Uint8List bytes;
   if (image.planes.length == 1) {
-    bytes = image.planes.first.bytes; // déjà en NV21
+    bytes = _packedNv21(image); // déjà en NV21 (lignes éventuellement « rembourrées »)
   } else if (image.planes.length >= 3) {
     bytes = _yuv420ToNv21(image); // certains téléphones livrent du YUV_420_888
   } else {
@@ -66,6 +66,34 @@ FrameInput? buildInputImage(CameraImage image, CameraDescription camera) {
     ),
     swap ? Size(h, w) : Size(w, h),
   );
+}
+
+/// NV21 en un seul plan : si chaque ligne contient des octets de remplissage
+/// (bytesPerRow > largeur), on les retire, sinon ML Kit lit une image brouillée.
+Uint8List _packedNv21(CameraImage image) {
+  final plane = image.planes.first;
+  final w = image.width;
+  final h = image.height;
+  final stride = plane.bytesPerRow;
+  if (stride <= w) return plane.bytes;
+  final out = Uint8List(w * h + w * (h ~/ 2));
+  var o = 0;
+  final rows = h + h ~/ 2; // lignes Y puis lignes VU
+  for (var row = 0; row < rows; row++) {
+    final start = row * stride;
+    if (start + w > plane.bytes.length) break;
+    out.setRange(o, o + w, plane.bytes, start);
+    o += w;
+  }
+  return out;
+}
+
+/// Résumé technique d'une image caméra, pour l'écran de diagnostic.
+String describeCameraImage(CameraImage image) {
+  final p = image.planes;
+  final stride = p.isEmpty ? 0 : p.first.bytesPerRow;
+  return '${image.width}×${image.height} · ${image.format.group.name}'
+      ' · ${p.length} plan${p.length > 1 ? 's' : ''} · ligne $stride o';
 }
 
 /// YUV_420_888 (3 plans) -> NV21 (Y puis V/U entrelacés).

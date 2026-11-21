@@ -2,6 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+/// Ligne de texte trouvée par l'OCR (en fractions 0..1 de l'image).
+class DetectedBox {
+  const DetectedBox(this.rect, this.inZone);
+  final Rect rect;
+  final bool inZone;
+}
+
 /// Bande réglable posée sur l'aperçu caméra : seul le texte à l'intérieur
 /// est lu. On la déplace en la faisant glisser, on change sa hauteur avec
 /// les poignées jaunes. Les lignes reconnues sont encadrées en vert.
@@ -18,8 +25,8 @@ class RoiOverlay extends StatelessWidget {
   final double top;
   final double bottom;
 
-  /// Rectangles des lignes lues, en fractions (0..1) de l'image.
-  final List<Rect> boxes;
+  /// Lignes trouvées : vertes dans la zone (lues), orange en dehors (ignorées).
+  final List<DetectedBox> boxes;
   final void Function(double top, double bottom) onChanged;
   final VoidCallback onChangeEnd;
 
@@ -149,7 +156,7 @@ class _RoiPainter extends CustomPainter {
 
   final double top;
   final double bottom;
-  final List<Rect> boxes;
+  final List<DetectedBox> boxes;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -166,11 +173,16 @@ class _RoiPainter extends CustomPainter {
         ..strokeWidth = 2,
     );
 
-    final boxPaint = Paint()
+    final inPaint = Paint()
       ..color = Colors.greenAccent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2;
-    for (final b in boxes) {
+    final outPaint = Paint()
+      ..color = Colors.orangeAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    for (final d in boxes) {
+      final b = d.rect;
       canvas.drawRect(
         Rect.fromLTRB(
           b.left * size.width,
@@ -178,7 +190,7 @@ class _RoiPainter extends CustomPainter {
           b.right * size.width,
           b.bottom * size.height,
         ),
-        boxPaint,
+        d.inZone ? inPaint : outPaint,
       );
     }
   }

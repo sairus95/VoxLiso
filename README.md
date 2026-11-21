@@ -19,7 +19,8 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 - **Tout se passe sur le téléphone** : pas d'internet, pas de serveur, aucune image envoyée.
 - **Un sous-titre n'est lu qu'une fois**, même s'il reste affiché plusieurs secondes et même si la caméra le relit avec de petites erreurs.
 - **Sous-titres en direct** (journaux TV qui défilent mot par mot) : seule la partie nouvelle est lue.
-- Les lignes reconnues sont **encadrées en vert** sur l'aperçu : on voit tout de suite si la caméra lit bien.
+- Les lignes reconnues sont **encadrées en vert** si elles sont dans la bande jaune (lues), **en orange** si elles sont en dehors (ignorées).
+- Le **diagnostic** (icône 🐞 en haut) affiche ce que la caméra voit : format d'image, nombre de lignes trouvées, texte lu.
 
 ### Réglages disponibles
 | Réglage | Effet |
@@ -27,6 +28,7 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 | Langue (FR / DE / ES / IT) | Choisit la voix. Boutons directement sur l'écran principal. |
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
 | Zoom | Pour « rapprocher » une télé éloignée. |
+| Luminosité | À baisser si l'écran de la télé apparaît « brûlé » (blanc) sur l'aperçu. |
 | Vitesse de la voix | De x0,5 à x2. |
 | Réactivité | Rapide / Normale / Stable (Stable = moins d'erreurs si le téléphone bouge). |
 | Couper la phrase en cours | Passe directement au nouveau sous-titre si la voix est en retard. |
