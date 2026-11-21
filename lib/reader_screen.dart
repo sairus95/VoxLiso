@@ -18,6 +18,7 @@ import 'settings.dart';
 import 'settings_sheet.dart';
 import 'speech_service.dart';
 import 'subtitle_tracker.dart';
+import 'system_bridge.dart';
 import 'text_tools.dart';
 import 'translator.dart';
 import 'tutorial.dart';
@@ -125,6 +126,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   Future<void> _start() async {
     await _speech.init();
+    if (s.ttsEngine.isNotEmpty) await _speech.setEngine(s.ttsEngine);
     _catalog.load(await _speech.rawVoices());
     _translator.refresh();
     await _applyVoice();
@@ -647,8 +649,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   ({TtsVoice? voice, double pitch}) _secondVoice(String lang) {
     final first = _primaryVoice(lang);
     final second = s.voice2For(lang) ?? _catalog.secondVoice(lang, first);
-    if (second == null || second.key == first?.key) return (voice: first, pitch: 0.8);
-    return (voice: second, pitch: 1.0);
+    final chosenPitch = s.pitch2For(lang);
+    if (second == null || second.key == first?.key) {
+      // Même voix que le 1er personnage : plus grave pour les distinguer.
+      return (voice: first, pitch: chosenPitch ?? s.pitchFor(lang) * 0.8);
+    }
+    return (voice: second, pitch: chosenPitch ?? 1.0);
   }
 
   /// Identifie la langue (mode Auto), traduit si demandé, puis dit le
@@ -706,7 +712,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           out[i],
           locale: locale,
           voice: i.isOdd ? second.voice : first,
-          pitch: i.isOdd ? second.pitch : 1.0,
+          pitch: i.isOdd ? second.pitch : s.pitchFor(speakLang),
         ),
     ]);
     if (s.largeMode) HapticFeedback.lightImpact();
@@ -731,8 +737,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   void _replay(HistoryEntry e) {
     _speech.say(
       e.text,
-      locale: languageFor(e.lang).ttsLocale,
+      locale: isReadLanguage(e.lang) ? languageFor(e.lang).ttsLocale : e.lang,
       voice: _primaryVoice(e.lang),
+      pitch: s.pitchFor(e.lang),
     );
   }
 
@@ -913,6 +920,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         primaryVoice: _primaryVoice,
         secondVoice: _secondVoice,
         onVoiceChanged: _applyVoice,
+        onEngineChanged: (engine) async {
+          s.ttsEngine = engine;
+          await _speech.setEngine(engine);
+          await _applyVoice();
+          _catalog.load(await _speech.rawVoices());
+        },
+        onInstallVoices: () => SystemBridge.installVoices(s.ttsEngine),
         onPreviewVoice: (lang, voice, pitch) => _speech.say(
           languageFor(lang).sample,
           locale: languageFor(lang).ttsLocale,

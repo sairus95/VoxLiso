@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.speech.tts.TextToSpeech
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -13,6 +14,7 @@ import io.flutter.plugin.common.MethodChannel
  * Activité Flutter + canaux vers le service de lecture de l'écran du téléphone.
  *  - « voxliso/screen » : start / stop / isRunning
  *  - « voxliso/screen/lines » : lignes de texte lues à l'écran
+ *  - « voxliso/system » : moteurs de voix, réglages de synthèse vocale
  */
 class MainActivity : FlutterActivity() {
 
@@ -54,6 +56,61 @@ class MainActivity : FlutterActivity() {
                         )
                     }
                     result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(messenger, "voxliso/system").setMethodCallHandler { call, result ->
+            when (call.method) {
+                // Moteurs de synthèse vocale installés : [{name, label}].
+                "ttsEngines" -> {
+                    var tts: TextToSpeech? = null
+                    try {
+                        tts = TextToSpeech(applicationContext) { }
+                        val list = tts.engines.map { mapOf("name" to it.name, "label" to it.label) }
+                        result.success(list)
+                    } catch (e: Exception) {
+                        result.success(emptyList<Map<String, String>>())
+                    } finally {
+                        try {
+                            tts?.shutdown()
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+                // Écran du téléphone pour télécharger d'autres voix.
+                "installVoices" -> {
+                    val engine = call.argument<String>("engine")
+                    val install = Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    if (!engine.isNullOrEmpty()) install.setPackage(engine)
+                    val settings = Intent("com.android.settings.TTS_SETTINGS")
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    result.success(
+                        listOf(install, settings).any { intent ->
+                            try {
+                                startActivity(intent)
+                                true
+                            } catch (_: Exception) {
+                                false
+                            }
+                        }
+                    )
+                }
+                // Réglages de synthèse vocale d'Android (moteur par défaut, voix).
+                "openTtsSettings" -> {
+                    result.success(
+                        try {
+                            startActivity(
+                                Intent("com.android.settings.TTS_SETTINGS")
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                            true
+                        } catch (_: Exception) {
+                            false
+                        }
+                    )
                 }
                 else -> result.notImplemented()
             }

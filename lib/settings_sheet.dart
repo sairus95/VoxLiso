@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'languages.dart';
 import 'settings.dart';
+import 'system_bridge.dart';
 import 'translator.dart';
 import 'version.dart';
 import 'voices.dart';
@@ -19,6 +20,8 @@ class SettingsSheet extends StatefulWidget {
     required this.primaryVoice,
     required this.secondVoice,
     required this.onVoiceChanged,
+    required this.onEngineChanged,
+    required this.onInstallVoices,
     required this.onPreviewVoice,
     required this.onResetZone,
     required this.onTutorial,
@@ -37,6 +40,12 @@ class SettingsSheet extends StatefulWidget {
   final ({TtsVoice? voice, double pitch}) Function(String lang) secondVoice;
 
   final Future<void> Function() onVoiceChanged;
+
+  /// Android : changement de moteur de voix (recharge la liste des voix).
+  final Future<void> Function(String engine) onEngineChanged;
+
+  /// Android : ouvre l'écran de téléchargement de voix du téléphone.
+  final Future<bool> Function() onInstallVoices;
 
   /// Fait entendre une phrase d'exemple avec une voix et une hauteur.
   final void Function(String lang, TtsVoice? voice, double pitch) onPreviewVoice;
@@ -77,10 +86,15 @@ class _SettingsSheetState extends State<SettingsSheet> {
     });
   }
   late String _voiceLang = widget.voice.code;
+  List<TtsEngine> _engines = const [];
+  bool _switchingEngine = false;
 
   @override
   void initState() {
     super.initState();
+    SystemBridge.ttsEngines().then((e) {
+      if (mounted) setState(() => _engines = e);
+    });
     widget.translator.refresh().then((_) {
       if (mounted) setState(() {});
     });
@@ -157,9 +171,41 @@ class _SettingsSheetState extends State<SettingsSheet> {
     String current(TtsVoice? v) =>
         v != null && voices.any((x) => x.key == v.key) ? v.key : 'auto';
 
+    final pitch2 = s.pitch2For(_voiceLang);
     return [
       Text('Voix', style: theme.textTheme.titleMedium),
       const SizedBox(height: 8),
+      if (Platform.isAndroid && _engines.length > 1) ...[
+        DropdownButtonFormField<String>(
+          initialValue: _engines.any((e) => e.name == s.ttsEngine) ? s.ttsEngine : '',
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Moteur de voix'),
+          items: [
+            const DropdownMenuItem(value: '', child: Text('Celui du téléphone')),
+            for (final e in _engines)
+              DropdownMenuItem(value: e.name, child: Text(e.label, overflow: TextOverflow.ellipsis)),
+          ],
+          onChanged: _switchingEngine
+              ? null
+              : (v) async {
+                  setState(() => _switchingEngine = true);
+                  await widget.onEngineChanged(v ?? '');
+                  if (mounted) setState(() => _switchingEngine = false);
+                },
+        ),
+        if (_switchingEngine)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: LinearProgressIndicator(),
+          ),
+        const SizedBox(height: 4),
+        Text(
+          'Chaque moteur a ses propres voix (Google, Samsung…). Changez de moteur pour en '
+          'découvrir d\'autres.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+      ],
       Wrap(spacing: 8, children: [
         for (final l in kLanguages)
           ChoiceChip(
@@ -175,6 +221,12 @@ class _SettingsSheetState extends State<SettingsSheet> {
           style: TextStyle(color: theme.colorScheme.error),
         )
       else ...[
+        Text(
+          '${voices.length} voix ${lang.label} sur ce téléphone'
+          '${voices.where((v) => v.networkRequired).isNotEmpty ? ' (dont ${voices.where((v) => v.networkRequired).length} en ligne, très naturelles)' : ''}.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 4),
         Row(children: [
           Expanded(
             child: DropdownButtonFormField<String>(
@@ -192,9 +244,17 @@ class _SettingsSheetState extends State<SettingsSheet> {
             tooltip: 'Écouter',
             icon: const Icon(Icons.play_circle_outline),
             onPressed: () => widget.onPreviewVoice(
-                _voiceLang, widget.primaryVoice(_voiceLang), 1.0),
+                _voiceLang, widget.primaryVoice(_voiceLang), s.pitchFor(_voiceLang)),
           ),
         ]),
+        _pitchSlider(
+          theme,
+          label: 'Hauteur',
+          value: s.pitchFor(_voiceLang),
+          onChanged: (v) => setState(() => s.setPitchFor(_voiceLang, v)),
+          onPreview: () => widget.onPreviewVoice(
+              _voiceLang, widget.primaryVoice(_voiceLang), s.pitchFor(_voiceLang)),
+        ),
         if (s.dialogueVoices) ...[
           const SizedBox(height: 8),
           Row(children: [
@@ -219,6 +279,17 @@ class _SettingsSheetState extends State<SettingsSheet> {
               },
             ),
           ]),
+          _pitchSlider(
+            theme,
+            label: pitch2 == null ? 'Hauteur (automatique)' : 'Hauteur',
+            value: widget.secondVoice(_voiceLang).pitch,
+            onChanged: (v) => setState(() => s.setPitch2For(_voiceLang, v)),
+            onPreview: () {
+              final second = widget.secondVoice(_voiceLang);
+              widget.onPreviewVoice(_voiceLang, second.voice, second.pitch);
+            },
+            onReset: pitch2 == null ? null : () => setState(() => s.setPitch2For(_voiceLang, null)),
+          ),
         ],
         const SizedBox(height: 6),
         Text(
@@ -227,6 +298,29 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   'Voix, puis téléchargez une voix « améliorée » ou « premium ».'
               : "Android n'indique pas si une voix est d'homme ou de femme : écoutez-les "
                   'avec ▶. ${_installHint()}',
+          style: theme.textTheme.bodySmall,
+        ),
+      ],
+      if (Platform.isAndroid) ...[
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: () async {
+              final ok = await widget.onInstallVoices();
+              if (!ok && mounted) {
+                ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+                  content: Text(_installHint()),
+                ));
+              }
+            },
+            icon: const Icon(Icons.download),
+            label: const Text('Installer d\'autres voix'),
+          ),
+        ),
+        Text(
+          'Ouvre l\'écran du téléphone pour télécharger des voix (plusieurs voix par langue '
+          'chez Google). Revenez ensuite dans les réglages de VoxLiso : la liste se met à jour.',
           style: theme.textTheme.bodySmall,
         ),
       ],
@@ -258,6 +352,41 @@ class _SettingsSheetState extends State<SettingsSheet> {
           style: TextStyle(color: theme.colorScheme.error),
         ),
     ];
+  }
+
+  Widget _pitchSlider(
+    ThemeData theme, {
+    required String label,
+    required double value,
+    required ValueChanged<double> onChanged,
+    required VoidCallback onPreview,
+    VoidCallback? onReset,
+  }) {
+    final v = value.clamp(0.6, 1.5).toDouble();
+    final word = v < 0.9 ? 'grave' : (v > 1.1 ? 'aiguë' : 'normale');
+    return Row(children: [
+      SizedBox(
+        width: 110,
+        child: Text('$label : $word', style: theme.textTheme.bodySmall),
+      ),
+      Expanded(
+        child: Slider(
+          value: v,
+          min: 0.6,
+          max: 1.5,
+          divisions: 18,
+          label: v.toStringAsFixed(2),
+          onChanged: onChanged,
+          onChangeEnd: (_) => onPreview(),
+        ),
+      ),
+      if (onReset != null)
+        IconButton(
+          tooltip: 'Hauteur automatique',
+          icon: const Icon(Icons.restart_alt),
+          onPressed: onReset,
+        ),
+    ]);
   }
 
   String _installHint() => Platform.isIOS

@@ -50,6 +50,21 @@ class SpeechService {
     await _tts.setPitch(1.0);
   }
 
+  /// Change de moteur de synthèse vocale (Android : Google, Samsung…).
+  /// La langue, la vitesse et la voix sont à régler de nouveau ensuite.
+  Future<void> setEngine(String engine) async {
+    try {
+      // '' = moteur par défaut du téléphone.
+      var name = engine;
+      if (name.isEmpty) name = (await _tts.getDefaultEngine)?.toString() ?? '';
+      if (name.isEmpty) return;
+      await _tts.setEngine(name).timeout(const Duration(seconds: 8));
+      await _tts.awaitSpeakCompletion(true);
+    } catch (_) {}
+    _current = null;
+    _pitch = -1; // force le réglage de la hauteur à la prochaine phrase
+  }
+
   /// Toutes les voix installées sur le téléphone (format brut de flutter_tts).
   Future<Object?> rawVoices() async {
     try {

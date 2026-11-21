@@ -94,6 +94,19 @@ class AppSettings {
       ? _prefs.remove('voice2_$lang')
       : _prefs.setString('voice2_$lang', v.toJson());
 
+  /// Hauteur de la voix principale d'une langue (1.0 = normale, 0.6 à 1.5).
+  double pitchFor(String lang) => _prefs.getDouble('pitch_$lang') ?? 1.0;
+  void setPitchFor(String lang, double v) => _prefs.setDouble('pitch_$lang', v);
+
+  /// Hauteur de la voix du 2e personnage (null = automatique).
+  double? pitch2For(String lang) => _prefs.getDouble('pitch2_$lang');
+  void setPitch2For(String lang, double? v) =>
+      v == null ? _prefs.remove('pitch2_$lang') : _prefs.setDouble('pitch2_$lang', v);
+
+  /// Moteur de synthèse vocale (Android) : '' = celui du téléphone.
+  String get ttsEngine => _prefs.getString('ttsEngine') ?? '';
+  set ttsEngine(String v) => _prefs.setString('ttsEngine', v);
+
   /// Une voix différente pour chaque réplique d'un dialogue (« - Oui. » / « - Non. »).
   bool get dialogueVoices => _prefs.getBool('dialogueVoices') ?? true;
   set dialogueVoices(bool v) => _prefs.setBool('dialogueVoices', v);
