@@ -10,6 +10,8 @@ on:
 jobs:
   android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # pour publier l'APK dans « Releases »
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -50,6 +52,16 @@ jobs:
         with:
           name: voix-sous-titres-android
           path: build/app/outputs/flutter-apk/app-release.apk
+      - name: Publier l'APK dans « Releases » (téléchargement direct sur le téléphone)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk VoixSousTitres.apk
+          gh release create "v1.0.${{ github.run_number }}" VoixSousTitres.apk \
+            --title "Voix Sous-Titres 1.0.${{ github.run_number }}" \
+            --notes "Ouvrez cette page sur votre téléphone Android et touchez VoixSousTitres.apk pour l'installer." \
+            --latest
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   ios:
     # Vérifie que la version iPhone compile. Pour l'installer sur un iPhone,
