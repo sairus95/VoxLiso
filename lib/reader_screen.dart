@@ -254,7 +254,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (c == null || !c.value.isInitialized) return full;
     final ar = c.value.aspectRatio; // largeur / hauteur, capteur en paysage
     final image = _landscape ? ar : 1 / ar;
-    final display = _landscape ? 16 / 9 : 9 / 16;
+    final display = _wide ? 16 / 9 : 9 / 16;
     if ((image - display).abs() < 0.01) return full;
     if (image > display) {
       final vw = display / image;
@@ -264,11 +264,16 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     return (ox: 0.0, oy: (1 - vh) / 2, vw: 1.0, vh: vh);
   }
 
-  double get _roiTop => _landscape ? s.roiTopLandscape : s.roiTop;
-  double get _roiBottom => _landscape ? s.roiBottomLandscape : s.roiBottom;
+  /// Vue 16:9 : en paysage, et en portrait si le réglage est activé (par défaut).
+  bool get _wide => _landscape || s.frame169;
+
+  // La bande est réglée sur la vue affichée : une seule bande pour toutes les
+  // vues 16:9 (portrait comme paysage), une autre pour la vue 9:16.
+  double get _roiTop => _wide ? s.roiTopLandscape : s.roiTop;
+  double get _roiBottom => _wide ? s.roiBottomLandscape : s.roiBottom;
 
   void _setRoi(double top, double bottom) {
-    if (_landscape) {
+    if (_wide) {
       s.roiTopLandscape = top;
       s.roiBottomLandscape = bottom;
     } else {
@@ -1154,7 +1159,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         : 0;
     final imageAspect = land ? ar : 1 / ar;
     return AspectRatio(
-      aspectRatio: land ? 16 / 9 : 9 / 16,
+      aspectRatio: _wide ? 16 / 9 : 9 / 16,
       child: Stack(fit: StackFit.expand, children: [
         ClipRect(
           child: FittedBox(

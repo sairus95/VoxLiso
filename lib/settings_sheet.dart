@@ -334,6 +334,15 @@ class _SettingsSheetState extends State<SettingsSheet> {
         const SizedBox(height: 8),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
+          title: const Text('Vue 16:9 (format télé)'),
+          subtitle: const Text(
+              "Téléphone debout, l'aperçu montre la bande centrale de l'image, au format de "
+              "la télé. Désactivé : toute la hauteur de l'image (9:16)."),
+          value: s.frame169,
+          onChanged: (v) => setState(() => s.frame169 = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
           title: const Text('Mode photo'),
           subtitle: const Text(
               'Analyse de vraies photos au lieu de la vidéo : plus lent (≈1 s), '

@@ -127,6 +127,11 @@ class AppSettings {
   set historyJson(String? v) =>
       v == null ? _prefs.remove('history') : _prefs.setString('history', v);
 
+  /// Vue 16:9 (format télé) même téléphone debout : l'aperçu montre la bande
+  /// centrale de l'image et seul le texte visible y est lu.
+  bool get frame169 => _prefs.getBool('frame169') ?? true;
+  set frame169(bool v) => _prefs.setBool('frame169', v);
+
   /// Zoom de la caméra.
   double get zoom => _prefs.getDouble('zoom') ?? 1.0;
   set zoom(double v) => _prefs.setDouble('zoom', v);
