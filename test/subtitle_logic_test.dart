@@ -35,6 +35,13 @@ void main() {
           'Ich habe keine Zeit, weil ich arbeiten muss.');
     });
 
+    test('prépare le texte pour la traduction', () {
+      expect(prepareForTranslation('...et puis il est parti'), 'et puis il est parti');
+      expect(prepareForTranslation('Je pense que…'), 'Je pense que');
+      expect(prepareForTranslation('Pourquoi ?'), 'Pourquoi ?');
+      expect(prepareForTranslation('...'), '...');
+    });
+
     test('écarte le bruit de l\'OCR', () {
       expect(cleanSubtitle(['= : ~ 1 2', '¿Dónde está?']), '¿Dónde está?');
     });

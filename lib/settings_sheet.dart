@@ -49,6 +49,33 @@ class SettingsSheet extends StatefulWidget {
 
 class _SettingsSheetState extends State<SettingsSheet> {
   AppSettings get s => widget.settings;
+  late final TextEditingController _deepl = TextEditingController(text: widget.settings.deeplKey);
+  bool _testing = false;
+  String? _testResult;
+
+  @override
+  void dispose() {
+    _deepl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _testDeepl() async {
+    s.deeplKey = _deepl.text;
+    widget.translator.deeplKey = s.deeplKey;
+    setState(() {
+      _testing = true;
+      _testResult = null;
+    });
+    final r = await widget.translator.translateAll(
+        ['Wo ist der Bahnhof, bitte?'], 'de', s.translateTo.isEmpty ? 'fr' : s.translateTo);
+    if (!mounted) return;
+    setState(() {
+      _testing = false;
+      _testResult = r != null && r.engine == 'DeepL'
+          ? 'DeepL fonctionne : « ${r.texts.first} »'
+          : (widget.translator.deeplError ?? 'DeepL ne répond pas.');
+    });
+  }
   late String _voiceLang = widget.voice.code;
 
   @override
@@ -265,7 +292,63 @@ class _SettingsSheetState extends State<SettingsSheet> {
           'Ensuite, tout fonctionne sans internet.',
           style: theme.textTheme.bodySmall,
         ),
+        const SizedBox(height: 12),
+        Text('Meilleure qualité avec DeepL (facultatif)', style: theme.textTheme.titleSmall),
         const SizedBox(height: 4),
+        Text(
+          "La traduction hors ligne est parfois approximative. Avec une clé DeepL "
+          "gratuite (« DeepL API Free », 500 000 caractères par mois, à créer sur "
+          "deepl.com/pro-api), la traduction se fait en ligne, avec une bien meilleure "
+          "qualité. Les sous-titres sont alors envoyés à DeepL. Sans internet, VoxLiso "
+          "revient tout seul à la traduction hors ligne.",
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _deepl,
+          obscureText: true,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: const InputDecoration(
+            labelText: 'Clé DeepL',
+            hintText: 'xxxxxxxx-xxxx-…:fx',
+            border: OutlineInputBorder(),
+          ),
+          onChanged: (v) => setState(() {
+            s.deeplKey = v;
+            widget.translator.deeplKey = s.deeplKey;
+            _testResult = null;
+          }),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          OutlinedButton.icon(
+            onPressed: _testing || _deepl.text.trim().isEmpty ? null : _testDeepl,
+            icon: _testing
+                ? const SizedBox(
+                    width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.check),
+            label: const Text('Tester la clé'),
+          ),
+          const SizedBox(width: 8),
+          if (_deepl.text.isNotEmpty)
+            TextButton(
+              onPressed: () => setState(() {
+                _deepl.clear();
+                s.deeplKey = '';
+                widget.translator.deeplKey = '';
+                _testResult = null;
+              }),
+              child: const Text('Effacer'),
+            ),
+        ]),
+        if (_testResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(_testResult!, style: theme.textTheme.bodySmall),
+          ),
+        const SizedBox(height: 12),
+        Text('Traduction hors ligne : langues téléchargées', style: theme.textTheme.titleSmall),
         for (final l in kLanguages)
           ListTile(
             contentPadding: EdgeInsets.zero,

@@ -1,8 +1,30 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 
-/// Traduction des sous-titres sur le téléphone (ML Kit), sans internet
-/// une fois les langues téléchargées (environ 30 Mo par langue, une seule fois).
+import 'text_tools.dart';
+
+/// Résultat d'une traduction : textes traduits et moteur utilisé.
+class TranslationResult {
+  TranslationResult(this.texts, this.engine);
+  final List<String> texts;
+
+  /// « DeepL » ou « hors ligne ».
+  final String engine;
+}
+
+/// Traduction des sous-titres.
+///  - Avec une clé DeepL (facultative) : en ligne, meilleure qualité.
+///  - Sinon, ou sans internet : sur le téléphone (ML Kit), une fois les langues
+///    téléchargées (environ 30 Mo par langue, une seule fois).
 class SubtitleTranslator {
+  /// Clé de l'API DeepL (vide = traduction hors ligne seulement).
+  String deeplKey = '';
+
+  /// Dernière erreur DeepL, pour l'afficher dans les réglages.
+  String? deeplError;
   final OnDeviceTranslatorModelManager _models = OnDeviceTranslatorModelManager();
   final Map<String, OnDeviceTranslator> _translators = {};
   final Map<String, bool> _downloaded = {};
@@ -84,7 +106,68 @@ class SubtitleTranslator {
     }
   }
 
+  /// Traduit plusieurs phrases (ex. les répliques d'un dialogue) d'un coup :
+  /// DeepL si une clé est réglée et que le réseau répond, sinon hors ligne.
+  /// Renvoie null si aucune traduction n'est possible.
+  Future<TranslationResult?> translateAll(List<String> texts, String from, String to) async {
+    if (from == to) return TranslationResult(texts, '');
+    final prepared = [for (final t in texts) prepareForTranslation(t)];
+    if (deeplKey.trim().isNotEmpty) {
+      final online = await _deepl(prepared, from, to);
+      if (online != null) return TranslationResult(online, 'DeepL');
+    }
+    final out = <String>[];
+    for (final t in prepared) {
+      final r = await translate(t, from, to).timeout(const Duration(seconds: 6),
+          onTimeout: () => null);
+      if (r == null) return null;
+      out.add(r);
+    }
+    return TranslationResult(out, 'hors ligne');
+  }
+
+  final HttpClient _http = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+
+  Future<List<String>?> _deepl(List<String> texts, String from, String to) async {
+    final key = deeplKey.trim();
+    // Les clés gratuites finissent par « :fx » et utilisent un autre serveur.
+    final host = key.endsWith(':fx') ? 'api-free.deepl.com' : 'api.deepl.com';
+    try {
+      final req = await _http.postUrl(Uri.https(host, '/v2/translate'));
+      req.headers
+        ..set(HttpHeaders.authorizationHeader, 'DeepL-Auth-Key $key')
+        ..contentType = ContentType.json;
+      req.write(jsonEncode({
+        'text': texts,
+        'source_lang': from.toUpperCase(),
+        'target_lang': to.toUpperCase(),
+      }));
+      final res = await req.close().timeout(const Duration(seconds: 5));
+      final body = await res.transform(utf8.decoder).join();
+      if (res.statusCode != 200) {
+        deeplError = switch (res.statusCode) {
+          403 => 'Clé DeepL refusée : vérifiez-la.',
+          456 => 'Quota DeepL du mois atteint : traduction hors ligne en attendant.',
+          429 => 'DeepL est surchargé : traduction hors ligne pour ce sous-titre.',
+          _ => 'DeepL a répondu ${res.statusCode}.',
+        };
+        return null;
+      }
+      final list = (jsonDecode(body) as Map<String, dynamic>)['translations'] as List;
+      deeplError = null;
+      final out = [for (final t in list) (t as Map)['text'].toString()];
+      return out.length == texts.length ? out : null;
+    } on TimeoutException {
+      deeplError = 'DeepL ne répond pas : traduction hors ligne.';
+      return null;
+    } catch (_) {
+      deeplError = 'Pas de connexion à DeepL : traduction hors ligne.';
+      return null;
+    }
+  }
+
   Future<void> close() async {
+    _http.close(force: true);
     for (final t in _translators.values) {
       await t.close();
     }

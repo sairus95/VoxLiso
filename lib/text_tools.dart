@@ -82,6 +82,16 @@ const Map<String, String> _accents = {
 
 final RegExp _nonAlnum = RegExp(r'[^a-z0-9]+');
 
+final RegExp _edgeEllipsis = RegExp(r'^(\.{2,}|…)\s*|\s*(\.{2,}|…)$');
+
+/// Prépare un sous-titre pour la traduction : retire les points de suspension
+/// de début et de fin (« ...et puis » / « je pense que... »), qui marquent
+/// une phrase coupée entre deux sous-titres et gênent la traduction.
+String prepareForTranslation(String text) {
+  final t = text.replaceAll(_edgeEllipsis, '').replaceAll(_spaces, ' ').trim();
+  return t.isEmpty ? text.trim() : t;
+}
+
 /// Version « simplifiée » d'un texte pour comparer deux lectures de l'OCR :
 /// minuscules, sans accents ni ponctuation.
 String normalizeForCompare(String text) {

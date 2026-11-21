@@ -10,6 +10,11 @@ class AppSettings {
 
   static const double defaultRoiTop = 0.40;
   static const double defaultRoiTopLandscape = 0.62;
+
+  /// Bords gauche et droit de la zone (caméra) : centrée par défaut, pour se
+  /// concentrer sur le texte du milieu de l'image (sous-titres).
+  static const double defaultRoiLeft = 0.15;
+  static const double defaultRoiRight = 0.85;
   static const double defaultRoiBottomLandscape = 0.95;
   static const double defaultRoiBottom = 0.80;
 
@@ -43,7 +48,14 @@ class AppSettings {
       _prefs.getDouble('roiBottomL') ?? defaultRoiBottomLandscape;
   set roiBottomLandscape(double v) => _prefs.setDouble('roiBottomL', v);
 
+  double get roiLeft => _prefs.getDouble('roiLeft') ?? defaultRoiLeft;
+  set roiLeft(double v) => _prefs.setDouble('roiLeft', v);
+  double get roiRight => _prefs.getDouble('roiRight') ?? defaultRoiRight;
+  set roiRight(double v) => _prefs.setDouble('roiRight', v);
+
   void resetZones() {
+    roiLeft = defaultRoiLeft;
+    roiRight = defaultRoiRight;
     roiTop = defaultRoiTop;
     roiBottom = defaultRoiBottom;
     roiTopLandscape = defaultRoiTopLandscape;
@@ -131,6 +143,10 @@ class AppSettings {
   /// centrale de l'image et seul le texte visible y est lu.
   bool get frame169 => _prefs.getBool('frame169') ?? true;
   set frame169(bool v) => _prefs.setBool('frame169', v);
+
+  /// Clé de l'API DeepL (facultative) : traduction en ligne de meilleure qualité.
+  String get deeplKey => _prefs.getString('deeplKey') ?? '';
+  set deeplKey(String v) => _prefs.setString('deeplKey', v.trim());
 
   /// Zoom de la caméra.
   double get zoom => _prefs.getDouble('zoom') ?? 1.0;

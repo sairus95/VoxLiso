@@ -65,6 +65,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   String _lastOriginal = '';
   String? _translateWarning;
 
+  /// Moteur de la dernière traduction : « DeepL » ou « hors ligne ».
+  String _translationEngine = '';
+
   final VoiceCatalog _catalog = VoiceCatalog();
   final SubtitleTranslator _translator = SubtitleTranslator();
 
@@ -96,6 +99,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     _tracker = SubtitleTracker(stableFrames: s.stableFrames);
     _langDetector = LanguageDetector(s.detectedLang);
+    _translator.deeplKey = s.deeplKey;
     _history.decode(s.historyJson);
     if (ScreenCapture.isAvailable) {
       _screen.listen();
@@ -363,18 +367,24 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Bande jaune (fractions de l'aperçu 16:9) -> pixels de l'image analysée.
     final top = (crop.oy + _roiTop * crop.vh) * h;
     final bottom = (crop.oy + _roiBottom * crop.vh) * h;
-    final left = crop.ox * w;
-    final right = (crop.ox + crop.vw) * w;
+    // Zone centrée : le texte des côtés (logos, heure, décor) est ignoré.
+    final left = (crop.ox + s.roiLeft * crop.vw) * w;
+    final right = (crop.ox + s.roiRight * crop.vw) * w;
+    // Partie de l'image visible dans l'aperçu.
+    final visible = Rect.fromLTRB(
+        crop.ox * w, crop.oy * h, (crop.ox + crop.vw) * w, (crop.oy + crop.vh) * h);
 
     final all = <TextLine>[];
     final lines = <TextLine>[];
     for (final block in result.blocks) {
       for (final line in block.lines) {
         final r = line.boundingBox;
-        // Hors de l'aperçu 16:9 : ni affichée ni lue.
-        if (r.center.dx < left || r.center.dx > right) continue;
+        // Hors de l'aperçu : ni affichée ni lue.
+        if (!visible.contains(r.center)) continue;
         all.add(line);
-        // Gardée si au moins la moitié de sa hauteur est dans la bande jaune.
+        // Lue si son centre est entre les bords gauche et droit de la zone et
+        // si au moins la moitié de sa hauteur est entre les bords haut et bas.
+        if (r.center.dx < left || r.center.dx > right) continue;
         final overlap = math.min(r.bottom, bottom) - math.max(r.top, top);
         if (r.height > 0 && overlap >= r.height * 0.5) lines.add(line);
       }
@@ -652,18 +662,19 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     String? warning;
     final target = s.translateTo;
     if (target.isNotEmpty && target != lang) {
-      final translated = <String>[];
-      for (final seg in segments) {
-        final t = await _translator.translate(seg, lang, target);
-        if (t == null) break;
-        translated.add(t);
-      }
-      if (translated.length == segments.length) {
-        out = translated;
+      final result = await _translator.translateAll(segments, lang, target);
+      if (result != null) {
+        out = result.texts;
         speakLang = target;
+        _translationEngine = result.engine;
+        // DeepL réglé mais indisponible : on le signale, la lecture continue.
+        if (result.engine != 'DeepL' && s.deeplKey.isNotEmpty) {
+          warning = _translator.deeplError;
+        }
       } else {
-        warning = 'Traduction impossible : téléchargez ${languageFor(lang).label} et '
-            '${languageFor(target).label} dans les réglages (section Traduction).';
+        warning = _translator.deeplError ??
+            'Traduction impossible : téléchargez ${languageFor(lang).label} et '
+                '${languageFor(target).label} dans les réglages (section Traduction).';
       }
     }
     if (_closed || !_reading) return;
@@ -751,6 +762,25 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   }
 
   /// Boutons « Monter / Descendre / Agrandir / Réduire » (TalkBack, malvoyants).
+  /// Plus étroite / plus large (caméra) : rapproche ou écarte les bords gauche et droit.
+  void _widenZone(double delta) {
+    var l = s.roiLeft - delta / 2;
+    var r = s.roiRight + delta / 2;
+    if (r - l < 0.2) {
+      final mid = (l + r) / 2;
+      l = mid - 0.1;
+      r = mid + 0.1;
+    }
+    l = l.clamp(0.0, 0.8).toDouble();
+    r = r.clamp(l + 0.2, 1.0).toDouble();
+    HapticFeedback.selectionClick();
+    setState(() {
+      s.roiLeft = l;
+      s.roiRight = r;
+    });
+    _announce('Zone de ${(l * 100).round()} à ${(r * 100).round()} pour cent en largeur');
+  }
+
   void _nudgeZone({double move = 0, double grow = 0}) {
     var (top, bottom) = _zone;
     top += move - grow / 2;
@@ -880,6 +910,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
     _speech.interrupt = s.interrupt;
     _tracker.stableFrames = s.stableFrames;
+    _translator.deeplKey = s.deeplKey;
     if (s.photoMode != wasPhoto) await _applyAnalysisMode();
     if (mounted) setState(() {});
   }
@@ -1107,6 +1138,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         b('Agrandir', Icons.unfold_more, () => _nudgeZone(grow: 0.06)),
         b('Réduire', Icons.unfold_less, () => _nudgeZone(grow: -0.06)),
       ]),
+      if (!s.screenSource) ...[
+        const SizedBox(height: 6),
+        Row(children: [
+          b('Plus étroite', Icons.width_normal, () => _widenZone(-0.1)),
+          b('Plus large', Icons.width_wide, () => _widenZone(0.1)),
+        ]),
+      ],
     ]);
   }
 
@@ -1174,8 +1212,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         RoiOverlay(
           top: _roiTop,
           bottom: _roiBottom,
+          left: s.roiLeft,
+          right: s.roiRight,
           boxes: _boxes,
           onChanged: (t, b) => setState(() => _setRoi(t, b)),
+          onHorizontalChanged: (l, r) => setState(() {
+            s.roiLeft = l;
+            s.roiRight = r;
+          }),
           onChangeEnd: () {},
         ),
         if (_showDiag)
@@ -1326,7 +1370,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                 [
                   if (s.autoLang) 'Langue détectée : ${_voice.label}',
                   if (s.translateTo.isNotEmpty)
-                    'lu en ${languageFor(s.translateTo).label}',
+                    'lu en ${languageFor(s.translateTo).label}'
+                        '${_lastOriginal.isNotEmpty && _translationEngine.isNotEmpty ? ' ($_translationEngine)' : ''}',
                 ].join(' · '),
                 style: theme.textTheme.labelMedium
                     ?.copyWith(color: theme.colorScheme.primary),
