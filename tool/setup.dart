@@ -106,6 +106,69 @@ bool _android() {
     proguard.writeAsStringSync('$existing\n$_proguardRules');
   }
   stdout.writeln('✔ proguard-rules.pro : modèles ML Kit inutilisés ignorés');
+  return _screenCapture(gradle);
+}
+
+/// Lecture de l'écran du téléphone (vidéos YouTube, navigateur…) :
+/// code Kotlin natif, permissions, service de capture et ML Kit natif.
+bool _screenCapture(File gradle) {
+  final kotlinRoot = Directory('android/app/src/main/kotlin');
+  final activity = kotlinRoot.existsSync()
+      ? kotlinRoot
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('MainActivity.kt'))
+          .firstOrNull
+      : null;
+  if (activity == null) {
+    stderr.writeln('❌ MainActivity.kt introuvable : lecture de l\'écran non installée');
+    return false;
+  }
+  final pkg = RegExp(r'^package\s+([\w.]+)', multiLine: true)
+          .firstMatch(activity.readAsStringSync())
+          ?.group(1) ??
+      'com.voxliso.voxliso';
+  for (final src in Directory('native/android').listSync().whereType<File>()) {
+    if (!src.path.endsWith('.kt')) continue;
+    final name = src.uri.pathSegments.last;
+    final code = src
+        .readAsStringSync()
+        .replaceFirst(RegExp(r'^package\s+[\w.]+', multiLine: true), 'package $pkg');
+    File('${activity.parent.path}/$name').writeAsStringSync(code);
+  }
+
+  final manifest = File('android/app/src/main/AndroidManifest.xml');
+  var xml = manifest.readAsStringSync();
+  for (final perm in [
+    'android.permission.FOREGROUND_SERVICE',
+    'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
+    'android.permission.POST_NOTIFICATIONS',
+  ]) {
+    if (!xml.contains('"$perm"')) {
+      xml = xml.replaceFirst(
+          '<application', '<uses-permission android:name="$perm" />\n    <application');
+    }
+  }
+  if (!xml.contains('.ScreenCaptureService')) {
+    xml = xml.replaceFirst(
+      '</application>',
+      '    <service\n'
+          '            android:name=".ScreenCaptureService"\n'
+          '            android:exported="false"\n'
+          '            android:foregroundServiceType="mediaProjection" />\n'
+          '    </application>',
+    );
+  }
+  manifest.writeAsStringSync(xml);
+
+  var g = gradle.readAsStringSync();
+  if (!g.contains('com.google.mlkit:text-recognition')) {
+    g = gradle.path.endsWith('.kts')
+        ? '$g\ndependencies {\n    implementation("com.google.mlkit:text-recognition:16.0.1")\n}\n'
+        : "$g\ndependencies {\n    implementation 'com.google.mlkit:text-recognition:16.0.1'\n}\n";
+    gradle.writeAsStringSync(g);
+  }
+  stdout.writeln('✔ Lecture de l\'écran du téléphone : service natif ($pkg)');
   return true;
 }
 

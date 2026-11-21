@@ -20,6 +20,7 @@ class SettingsSheet extends StatefulWidget {
     required this.onVoiceChanged,
     required this.onPreviewVoice,
     required this.onResetZone,
+    required this.onTutorial,
   });
 
   final AppSettings settings;
@@ -39,6 +40,7 @@ class SettingsSheet extends StatefulWidget {
   /// Fait entendre une phrase d'exemple avec une voix et une hauteur.
   final void Function(String lang, TtsVoice? voice, double pitch) onPreviewVoice;
   final VoidCallback onResetZone;
+  final VoidCallback onTutorial;
 
   @override
   State<SettingsSheet> createState() => _SettingsSheetState();
@@ -67,6 +69,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
           children: [
             Text('Réglages', style: theme.textTheme.titleLarge),
             const SizedBox(height: 16),
+            ..._accessibilitySection(theme),
+            const Divider(height: 32),
             ..._voiceSection(theme),
             const Divider(height: 32),
             ..._translationSection(theme),
@@ -77,6 +81,31 @@ class _SettingsSheetState extends State<SettingsSheet> {
       ),
     );
   }
+
+  // --------------------------------------------------------- accessibilité
+
+  List<Widget> _accessibilitySection(ThemeData theme) => [
+        Text('Accessibilité', style: theme.textTheme.titleMedium),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Mode grands boutons'),
+          subtitle: const Text(
+              'Pour les personnes qui voient mal : textes et boutons agrandis, bouton '
+              '« Répéter », boutons pour déplacer la zone sans glisser, annonces vocales '
+              'et vibration à chaque sous-titre. Ces boutons apparaissent aussi avec '
+              'TalkBack ou VoiceOver.'),
+          value: s.largeMode,
+          onChanged: (v) => setState(() => s.largeMode = v),
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: widget.onTutorial,
+            icon: const Icon(Icons.school_outlined),
+            label: const Text('Revoir le tutoriel'),
+          ),
+        ),
+      ];
 
   // ------------------------------------------------------------------ voix
 

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voxliso/history.dart';
 import 'package:voxliso/language_detector.dart';
 import 'package:voxliso/subtitle_tracker.dart';
 import 'package:voxliso/text_tools.dart';
@@ -140,6 +141,40 @@ void main() {
       expect(labels['fr-fr-x-frd-local|fr-FR'], startsWith('Voix 1'));
       expect(labels['Amélie|fr-FR'], contains('Femme'));
       expect(labels['fr-fr-x-fre-network|fr-FR'], contains('internet'));
+    });
+  });
+
+  group('SubtitleHistory', () {
+    test('sauvegarde et relit les entrées, traduction comprise', () {
+      final h = SubtitleHistory()
+        ..add(HistoryEntry(time: DateTime(2026, 11, 21, 20, 30), text: 'Bonjour', lang: 'fr'))
+        ..add(HistoryEntry(
+            time: DateTime(2026, 11, 21, 20, 31),
+            text: 'Où est la gare ?',
+            lang: 'fr',
+            original: 'Wo ist der Bahnhof?',
+            originalLang: 'de'));
+      final copy = SubtitleHistory()..decode(h.encode());
+      expect(copy.entries.length, 2);
+      expect(copy.last!.original, 'Wo ist der Bahnhof?');
+      expect(copy.last!.originalLang, 'de');
+      expect(copy.entries.first.time, DateTime(2026, 11, 21, 20, 30));
+    });
+
+    test('garde un nombre limité de phrases', () {
+      final h = SubtitleHistory();
+      for (var i = 0; i < SubtitleHistory.maxEntries + 20; i++) {
+        h.add(HistoryEntry(time: DateTime(2026), text: 'Phrase $i', lang: 'fr'));
+      }
+      expect(h.entries.length, SubtitleHistory.maxEntries);
+      expect(h.last!.text, 'Phrase ${SubtitleHistory.maxEntries + 19}');
+      final saved = SubtitleHistory()..decode(h.encode());
+      expect(saved.entries.length, SubtitleHistory.savedEntries);
+    });
+
+    test('données abîmées : historique vide, sans plantage', () {
+      final h = SubtitleHistory()..decode('pas du json');
+      expect(h.entries, isEmpty);
     });
   });
 }

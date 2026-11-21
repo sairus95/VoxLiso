@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'reader_screen.dart';
 import 'settings.dart';
+import 'tutorial.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,7 +31,16 @@ class VoxLisoApp extends StatelessWidget {
       title: 'VoxLiso',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(colorScheme: scheme, useMaterial3: true),
-      home: ReaderScreen(settings: settings),
+      home: settings.tutorialSeen
+          ? ReaderScreen(settings: settings)
+          : Builder(
+              builder: (context) => TutorialScreen(
+                settings: settings,
+                onDone: () => Navigator.of(context).pushReplacement(
+                  MaterialPageRoute<void>(builder: (_) => ReaderScreen(settings: settings)),
+                ),
+              ),
+            ),
     );
   }
 }

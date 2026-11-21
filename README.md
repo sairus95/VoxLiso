@@ -20,6 +20,10 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 - **Un sous-titre n'est lu qu'une fois**, même s'il reste affiché plusieurs secondes et même si la caméra le relit avec de petites erreurs.
 - **Sous-titres en direct** (journaux TV qui défilent mot par mot) : seule la partie nouvelle est lue.
 - Les lignes reconnues sont **encadrées en vert** si elles sont dans la bande jaune (lues), **en orange** si elles sont en dehors (ignorées).
+- **Historique** (🕘 en haut) : toutes les phrases lues, avec l'heure ; touchez-en une pour la réentendre, ou copiez-la. Le bouton ↻ à côté du dernier sous-titre le répète.
+- **Tutoriel** au premier lancement (à revoir dans Réglages > Accessibilité).
+- **Mode grands boutons** (Réglages > Accessibilité) : textes et boutons agrandis, bouton « Répéter », boutons Monter / Descendre / Agrandir / Réduire pour placer la zone sans glisser (affichés aussi avec TalkBack ou VoiceOver), annonces vocales et vibration à chaque sous-titre.
+- **Écran du téléphone** (Android) : lit les sous-titres des vidéos regardées sur le téléphone lui-même (YouTube, navigateur, vos vidéos), sans caméra. Appuyez sur « Lire », autorisez la capture de l'écran, puis ouvrez la vidéo ; pour arrêter, notification VoxLiso > Arrêter. **Netflix, Disney+ et Prime Video protègent leur écran : leurs sous-titres ne peuvent pas être lus.** Pas disponible sur iPhone.
 - **Tester sur une photo** (icône de scanner en haut) : prend une photo et affiche tout le texte trouvé. Pratique pour vérifier que la caméra lit bien.
 - Le **diagnostic** (icône 🐞 en haut) affiche ce que la caméra voit : format d'image, nombre de lignes trouvées, texte lu.
 
@@ -104,6 +108,10 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 | `lib/language_detector.dart` | Détection automatique de la langue (ML Kit Language ID) |
 | `lib/voices.dart` | Liste et classement des voix du téléphone, choix du 2e personnage |
 | `lib/translator.dart` | Traduction hors ligne (ML Kit Translation) et téléchargement des langues |
+| `lib/history.dart` | Historique des sous-titres lus et son écran |
+| `lib/tutorial.dart` | Tutoriel illustré du premier lancement |
+| `lib/screen_capture.dart` | Lien avec le service Android de lecture de l'écran du téléphone |
+| `native/android/` | Code Kotlin : capture de l'écran (MediaProjection) + OCR ML Kit natif, installé par `tool/setup.dart` |
 | `lib/settings.dart`, `lib/settings_sheet.dart` | Réglages enregistrés et écran des réglages |
 | `tool/setup.dart` | Configure les dossiers Android/iOS générés (et installe l'icône) |
 | `tool/icone/`, `assets/launcher/` | Dessin de l'icône et images générées pour Android et iOS |

@@ -8,15 +8,18 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'camera_input.dart';
+import 'history.dart';
 import 'language_detector.dart';
 import 'languages.dart';
 import 'roi_overlay.dart';
+import 'screen_capture.dart';
 import 'settings.dart';
 import 'settings_sheet.dart';
 import 'speech_service.dart';
 import 'subtitle_tracker.dart';
 import 'text_tools.dart';
 import 'translator.dart';
+import 'tutorial.dart';
 import 'voices.dart';
 
 class ReaderScreen extends StatefulWidget {
@@ -45,7 +48,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   List<DetectedBox> _boxes = const [];
   String _diag = 'En attente de la première image…';
-  bool _showDiag = true;
+  late bool _showDiag = !widget.settings.largeMode;
   bool _textOutsideOnly = false;
 
   double _exposure = 0;
@@ -63,6 +66,16 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// Les sous-titres sont traités l'un après l'autre (détection de langue,
   /// traduction) pour être dits dans l'ordre.
   Future<void> _speakChain = Future<void>.value();
+
+  final SubtitleHistory _history = SubtitleHistory();
+
+  // Lecture de l'écran du téléphone (Android).
+  final ScreenCapture _screen = ScreenCapture();
+  List<DetectedBox> _screenBoxes = const [];
+  bool _screenBoxesLandscape = false;
+
+  /// Bande d'écran affichée et réglée : portrait ou paysage.
+  bool _screenEditLandscape = false;
   String? _error;
   bool _voiceMissing = false;
 
@@ -78,6 +91,18 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.addObserver(this);
     _tracker = SubtitleTracker(stableFrames: s.stableFrames);
     _langDetector = LanguageDetector(s.detectedLang);
+    _history.decode(s.historyJson);
+    if (ScreenCapture.isAvailable) {
+      _screen.listen();
+      _screen.frames.listen(_onScreenFrame);
+      _screen.stopped.listen((_) => _stopReading());
+      _screen.isRunning().then((running) {
+        // Capture restée active (application rouverte) : on reprend la lecture.
+        if (running && s.screenSource && mounted) setState(() => _reading = true);
+      });
+    } else if (s.screenSource) {
+      s.source = 'camera';
+    }
     _speech.interrupt = s.interrupt;
     _zoom = s.zoom;
     _start();
@@ -105,7 +130,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   // ---------------------------------------------------------------- caméra
 
   Future<void> _initCamera() async {
-    if (_initializing || _controller != null || _closed) return;
+    if (_initializing || _controller != null || _closed || s.screenSource) return;
     _initializing = true;
     try {
       final cams = await availableCameras();
@@ -251,6 +276,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Mode écran : la lecture continue pendant que l'on regarde la vidéo.
+    if (s.screenSource) return;
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
       if (_controller != null) {
         _stopReading();
@@ -342,24 +369,69 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
     });
 
-    if (_reading) {
-      final parts = subtitleParts(
-        lines.map((l) => l.text).toList(),
-        removeSoundTags: s.removeSoundTags,
-      );
-      final text = parts.join(' ');
-      final toSay = _tracker.push(text);
-      if (toSay != null && toSay.trim().isNotEmpty) {
-        // Répliques séparées seulement si tout le sous-titre est nouveau
-        // (pas pour la fin d'un sous-titre « en direct » qui défile).
-        final segments =
-            s.dialogueVoices && parts.length > 1 && toSay == text ? parts : [toSay];
-        _speakChain = _speakChain
-            .then((_) => _speakSubtitle(text, segments))
-            .catchError((Object _) {});
-      }
-    }
+    if (_reading) _onLines(lines.map((l) => l.text).toList());
     return (all: all, inZone: lines);
+  }
+
+  /// Lignes retenues dans la bande (caméra ou écran) -> sous-titre à dire.
+  void _onLines(List<String> lineTexts) {
+    final parts = subtitleParts(lineTexts, removeSoundTags: s.removeSoundTags);
+    final text = parts.join(' ');
+    final toSay = _tracker.push(text);
+    if (toSay == null || toSay.trim().isEmpty) return;
+    // Répliques séparées seulement si tout le sous-titre est nouveau
+    // (pas pour la fin d'un sous-titre « en direct » qui défile).
+    final segments = s.dialogueVoices && parts.length > 1 && toSay == text ? parts : [toSay];
+    _speakChain =
+        _speakChain.then((_) => _speakSubtitle(text, segments)).catchError((Object _) {});
+  }
+
+  // ------------------------------------------------- écran du téléphone
+
+  (double, double) _screenBand(bool landscape) => landscape
+      ? (s.screenTopLandscape, s.screenBottomLandscape)
+      : (s.screenTop, s.screenBottom);
+
+  void _onScreenFrame(ScreenFrame f) {
+    if (!s.screenSource || _closed) return;
+    final (top, bottom) = _screenBand(f.landscape);
+    final inZone = <ScreenLine>[];
+    for (final l in f.lines) {
+      final r = l.rect;
+      final overlap = math.min(r.bottom, bottom) - math.max(r.top, top);
+      if (r.height > 0 && overlap >= r.height * 0.5) inZone.add(l);
+    }
+    inZone.sort((a, b) {
+      final dy = a.rect.center.dy - b.rect.center.dy;
+      if (dy.abs() < math.min(a.rect.height, b.rect.height) * 0.5) {
+        return a.rect.left.compareTo(b.rect.left);
+      }
+      return dy < 0 ? -1 : 1;
+    });
+    final raw = inZone.map((l) => l.text).join(' / ');
+    if (mounted) {
+      setState(() {
+        _screenBoxes = [for (final l in f.lines) DetectedBox(l.rect, inZone.contains(l))];
+        _screenBoxesLandscape = f.landscape;
+        _diag = 'Écran du téléphone (${f.landscape ? 'paysage' : 'portrait'})\n'
+            'Texte trouvé : ${f.lines.length} ligne(s), ${inZone.length} dans la zone'
+            '${raw.isEmpty ? '' : '\n« $raw »'}';
+      });
+    }
+    if (_reading) _onLines(inZone.map((l) => l.text).toList());
+  }
+
+  Future<void> _setSource(String source) async {
+    if (source == s.source) return;
+    if (_reading) await _stopReadingAsync();
+    s.source = source;
+    _tracker.reset();
+    if (source == 'screen') {
+      await _releaseCamera();
+    } else {
+      await _initCamera();
+    }
+    if (mounted) setState(() {});
   }
 
   // ------------------------------------------------------------ mode photo
@@ -568,6 +640,15 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           pitch: i.isOdd ? second.pitch : 1.0,
         ),
     ]);
+    if (s.largeMode) HapticFeedback.lightImpact();
+    _history.add(HistoryEntry(
+      time: DateTime.now(),
+      text: out.join(' '),
+      lang: speakLang,
+      original: speakLang != lang ? segments.join(' ') : '',
+      originalLang: speakLang != lang ? lang : '',
+    ));
+    s.historyJson = _history.encode();
     if (mounted && !_closed) {
       setState(() {
         _lastSpoken = out.join(' ');
@@ -577,30 +658,132 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
   }
 
+  /// Redit une phrase (historique ou bouton « Répéter »).
+  void _replay(HistoryEntry e) {
+    _speech.say(
+      e.text,
+      locale: languageFor(e.lang).ttsLocale,
+      voice: _primaryVoice(e.lang),
+    );
+  }
+
+  Future<void> _openHistory() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => HistoryScreen(
+        history: _history,
+        large: s.largeMode,
+        onReplay: _replay,
+        onChanged: () => s.historyJson = _history.encode(),
+      ),
+    ));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _openTutorial() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (ctx) => TutorialScreen(settings: s, onDone: () => Navigator.of(ctx).pop()),
+    ));
+    if (mounted) setState(() {});
+  }
+
+  /// Annonce vocale en mode grands boutons (en français, langue de l'interface).
+  void _announce(String message) {
+    if (!s.largeMode) return;
+    _speech.say(message, locale: 'fr-FR', voice: _primaryVoice('fr'));
+  }
+
+  // ----------------------------------------------- zone sans glisser
+
+  (double, double) get _zone => s.screenSource
+      ? _screenBand(_screenEditLandscape)
+      : (_roiTop, _roiBottom);
+
+  void _setZone(double top, double bottom) {
+    if (!s.screenSource) {
+      _setRoi(top, bottom);
+    } else if (_screenEditLandscape) {
+      s.screenTopLandscape = top;
+      s.screenBottomLandscape = bottom;
+    } else {
+      s.screenTop = top;
+      s.screenBottom = bottom;
+    }
+  }
+
+  /// Boutons « Monter / Descendre / Agrandir / Réduire » (TalkBack, malvoyants).
+  void _nudgeZone({double move = 0, double grow = 0}) {
+    var (top, bottom) = _zone;
+    top += move - grow / 2;
+    bottom += move + grow / 2;
+    if (bottom - top < 0.08) {
+      final mid = (top + bottom) / 2;
+      top = mid - 0.04;
+      bottom = mid + 0.04;
+    }
+    if (top < 0) {
+      bottom -= top;
+      top = 0;
+    }
+    if (bottom > 1) {
+      top -= bottom - 1;
+      bottom = 1;
+    }
+    top = top.clamp(0.0, 0.92).toDouble();
+    bottom = bottom.clamp(top + 0.08, 1.0).toDouble();
+    HapticFeedback.selectionClick();
+    setState(() => _setZone(top, bottom));
+    _announce('Zone de ${(top * 100).round()} à ${(bottom * 100).round()} pour cent');
+  }
+
   void _setDiag(String text) {
     if (mounted && !_closed) setState(() => _diag = text);
   }
 
   // ---------------------------------------------------------- commandes
 
-  void _toggleReading() {
+  Future<void> _toggleReading() async {
     HapticFeedback.mediumImpact();
     if (_reading) {
-      _stopReading();
+      await _stopReadingAsync();
+      _announce('Lecture arrêtée');
+      return;
+    }
+    _tracker
+      ..stableFrames = s.stableFrames
+      ..reset();
+    if (s.screenSource) {
+      final ok = await _screen.start();
+      if (!mounted) return;
+      if (!ok) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Capture de l'écran refusée : la lecture ne peut pas démarrer."),
+        ));
+        return;
+      }
+      setState(() => _reading = true);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        duration: Duration(seconds: 6),
+        content: Text('Ouvrez maintenant votre vidéo (YouTube, navigateur…) avec les '
+            'sous-titres activés. Pour arrêter : notification VoxLiso > Arrêter.'),
+      ));
+      _announce('Lecture démarrée. Ouvrez maintenant votre vidéo.');
     } else {
-      _tracker
-        ..stableFrames = s.stableFrames
-        ..reset();
       WakelockPlus.enable();
       setState(() => _reading = true);
+      _announce('Lecture démarrée');
     }
   }
 
   void _stopReading() {
+    _stopReadingAsync();
+  }
+
+  Future<void> _stopReadingAsync() async {
     if (!_reading) return;
+    if (mounted && !_closed) setState(() => _reading = false);
     _speech.stop();
     WakelockPlus.disable();
-    if (mounted && !_closed) setState(() => _reading = false);
+    if (s.screenSource) await _screen.stop();
   }
 
   Future<void> _setLanguage(String code) async {
@@ -649,6 +832,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           pitch: pitch,
         ),
         onResetZone: () => setState(s.resetZones),
+        onTutorial: () {
+          Navigator.of(context).pop();
+          _openTutorial();
+        },
       ),
     );
     _speech.interrupt = s.interrupt;
@@ -665,6 +852,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _recognizer.close();
     _langDetector.close();
     _translator.close();
+    _screen.dispose();
     _speech.stop();
     WakelockPlus.disable();
     super.dispose();
@@ -692,10 +880,16 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         title: const Text('VoxLiso'),
         actions: [
           IconButton(
-            tooltip: 'Tester sur une photo',
-            icon: const Icon(Icons.document_scanner_outlined),
-            onPressed: _controller == null ? null : _testPhoto,
+            tooltip: 'Historique des sous-titres',
+            icon: const Icon(Icons.history),
+            onPressed: _openHistory,
           ),
+          if (!s.screenSource)
+            IconButton(
+              tooltip: 'Tester sur une photo',
+              icon: const Icon(Icons.document_scanner_outlined),
+              onPressed: _controller == null ? null : _testPhoto,
+            ),
           IconButton(
             tooltip: _showDiag ? 'Masquer le diagnostic' : 'Afficher le diagnostic',
             icon: Icon(_showDiag ? Icons.bug_report : Icons.bug_report_outlined),
@@ -731,11 +925,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
             : Column(children: [
                 Expanded(child: Center(child: _buildPreview())),
                 if (banner != null) banner,
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: _buildControls(theme),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: _buildControls(theme),
+                    ),
                   ),
                 ),
               ]),
@@ -744,10 +940,49 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   }
 
   List<Widget> _buildControls(ThemeData theme) {
-    return [
+    final large = s.largeMode;
+    final a11y = large || MediaQuery.accessibleNavigationOf(context);
+    final controls = <Widget>[
       _buildLastText(theme),
-      if (_maxZoom > _minZoom) _buildZoom(),
-      if (_maxExposure > _minExposure) _buildExposure(),
+      if (large && _history.last != null) ...[
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 64,
+          child: FilledButton.tonalIcon(
+            onPressed: () => _replay(_history.last!),
+            icon: const Icon(Icons.replay, size: 30),
+            label: const Text('Répéter la dernière phrase', style: TextStyle(fontSize: 20)),
+          ),
+        ),
+      ],
+      if (ScreenCapture.isAvailable) ...[
+        const SizedBox(height: 8),
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(
+              value: 'camera',
+              icon: Icon(Icons.videocam_outlined),
+              label: Text('Caméra'),
+              tooltip: 'Sous-titres de la télé ou de l\'ordinateur',
+            ),
+            ButtonSegment(
+              value: 'screen',
+              icon: Icon(Icons.smartphone),
+              label: Text('Écran du téléphone'),
+              tooltip: 'Vidéos regardées sur ce téléphone (YouTube, navigateur…)',
+            ),
+          ],
+          selected: {s.source},
+          showSelectedIcon: false,
+          onSelectionChanged: (v) => _setSource(v.first),
+        ),
+      ],
+      if (!s.screenSource && _maxZoom > _minZoom) _buildZoom(),
+      if (!s.screenSource && _maxExposure > _minExposure) _buildExposure(),
+      if (a11y) ...[
+        const SizedBox(height: 8),
+        _buildZoneButtons(large),
+      ],
       const SizedBox(height: 8),
       SegmentedButton<String>(
         segments: [
@@ -761,26 +996,77 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         ],
         selected: {s.lang},
         showSelectedIcon: false,
-        style: const ButtonStyle(visualDensity: VisualDensity.compact),
+        style: ButtonStyle(
+          visualDensity: large ? VisualDensity.standard : VisualDensity.compact,
+          minimumSize: large ? const WidgetStatePropertyAll(Size(0, 56)) : null,
+        ),
         onSelectionChanged: (v) => _setLanguage(v.first),
       ),
       const SizedBox(height: 12),
       SizedBox(
-        height: 64,
+        height: large ? 104 : 64,
         child: FilledButton.icon(
           style: FilledButton.styleFrom(
             backgroundColor: _reading ? Colors.red.shade700 : null,
-            textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            textStyle: TextStyle(fontSize: large ? 28 : 20, fontWeight: FontWeight.bold),
           ),
-          onPressed: _controller == null ? null : _toggleReading,
-          icon: Icon(_reading ? Icons.stop : Icons.record_voice_over, size: 28),
+          onPressed: s.screenSource || _controller != null ? _toggleReading : null,
+          icon: Icon(_reading ? Icons.stop : Icons.record_voice_over, size: large ? 40 : 28),
           label: Text(_reading ? 'Arrêter la lecture' : 'Lire les sous-titres'),
         ),
       ),
     ];
+    if (!large) return controls;
+    // Mode grands boutons : textes agrandis dans le panneau de commandes.
+    final scale = MediaQuery.textScalerOf(context).scale(1);
+    return [
+      MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: TextScaler.linear(math.max(scale, 1.3))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: controls),
+      ),
+    ];
+  }
+
+  Widget _buildZoneButtons(bool large) {
+    final (top, bottom) = _zone;
+    Widget b(String label, IconData icon, VoidCallback onTap) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: SizedBox(
+              height: large ? 64 : 48,
+              child: OutlinedButton(
+                onPressed: onTap,
+                style: OutlinedButton.styleFrom(padding: EdgeInsets.zero),
+                child: Semantics(
+                  label: label,
+                  excludeSemantics: true,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(icon),
+                    Text(label, style: const TextStyle(fontSize: 12), maxLines: 1),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(
+        'Zone des sous-titres : de ${(top * 100).round()} à ${(bottom * 100).round()} %'
+        '${s.screenSource ? (_screenEditLandscape ? ' (paysage)' : ' (portrait)') : ''}',
+      ),
+      const SizedBox(height: 4),
+      Row(children: [
+        b('Monter', Icons.arrow_upward, () => _nudgeZone(move: -0.04)),
+        b('Descendre', Icons.arrow_downward, () => _nudgeZone(move: 0.04)),
+        b('Agrandir', Icons.unfold_more, () => _nudgeZone(grow: 0.06)),
+        b('Réduire', Icons.unfold_less, () => _nudgeZone(grow: -0.06)),
+      ]),
+    ]);
   }
 
   Widget _buildPreview() {
+    if (s.screenSource) return _buildScreenPanel();
     if (_error != null) {
       return Padding(
         padding: const EdgeInsets.all(24),
@@ -848,12 +1134,110 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
   }
 
+  /// Mode « Écran du téléphone » : schéma du téléphone avec la bande à régler.
+  Widget _buildScreenPanel() {
+    final theme = Theme.of(context);
+    final land = _screenEditLandscape;
+    final (top, bottom) = _screenBand(land);
+    final boxes = _screenBoxesLandscape == land ? _screenBoxes : const <DetectedBox>[];
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(children: [
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: false, icon: Icon(Icons.stay_current_portrait), label: Text('Portrait')),
+            ButtonSegment(value: true, icon: Icon(Icons.stay_current_landscape), label: Text('Plein écran')),
+          ],
+          selected: {land},
+          showSelectedIcon: false,
+          onSelectionChanged: (v) => setState(() => _screenEditLandscape = v.first),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Center(
+            child: AspectRatio(
+              aspectRatio: land ? 19.5 / 9 : 9 / 19.5,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF15110C),
+                  border: Border.all(color: theme.colorScheme.outline, width: 3),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(fit: StackFit.expand, children: [
+                  // Emplacement typique de la vidéo.
+                  if (!land)
+                    const Align(
+                      alignment: Alignment(0, -0.62),
+                      child: FractionallySizedBox(
+                        heightFactor: 0.28,
+                        widthFactor: 1,
+                        child: ColoredBox(color: Color(0xFF3A3024)),
+                      ),
+                    )
+                  else
+                    const ColoredBox(color: Color(0xFF3A3024)),
+                  RoiOverlay(
+                    top: top,
+                    bottom: bottom,
+                    boxes: boxes,
+                    onChanged: (t, b) => setState(() {
+                      if (land) {
+                        s.screenTopLandscape = t;
+                        s.screenBottomLandscape = b;
+                      } else {
+                        s.screenTop = t;
+                        s.screenBottom = b;
+                      }
+                    }),
+                    onChangeEnd: () {},
+                  ),
+                  if (_showDiag)
+                    Positioned(
+                      left: 4,
+                      right: 4,
+                      bottom: 4,
+                      child: IgnorePointer(
+                        child: Text(
+                          _diag,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white70, fontSize: 10),
+                        ),
+                      ),
+                    ),
+                ]),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _reading
+              ? 'Lecture en cours : ouvrez votre vidéo avec les sous-titres activés.'
+              : 'Placez la bande là où les sous-titres apparaissent sur votre écran '
+                  '(portrait et plein écran se règlent séparément), puis appuyez sur « Lire ».',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall,
+        ),
+        Text(
+          'Fonctionne avec YouTube, le navigateur, vos vidéos… '
+          'Pas avec Netflix, Disney+ ni Prime Video (écran protégé).',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+        ),
+      ]),
+    );
+  }
+
   Widget _buildLastText(ThemeData theme) {
     final hint = _textOutsideOnly
         ? 'Du texte est vu en dehors de la bande jaune (cadres orange) : '
             'faites glisser la bande dessus.'
         : _reading
         ? 'En attente d\'un sous-titre…'
+        : s.screenSource
+        ? 'Appuyez sur « Lire », autorisez la capture, puis ouvrez votre vidéo.'
         : 'Visez l\'écran, placez la bande jaune sur les sous-titres, puis appuyez sur « Lire ».';
     return Container(
       constraints: const BoxConstraints(minHeight: 72),
@@ -879,14 +1263,25 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                     ?.copyWith(color: theme.colorScheme.primary),
               ),
             ),
-          Text(
-            _lastSpoken.isEmpty ? hint : _lastSpoken,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: _lastSpoken.isEmpty
-                ? theme.textTheme.bodyMedium
-                : theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-          ),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(
+              child: Text(
+                _lastSpoken.isEmpty ? hint : _lastSpoken,
+                maxLines: s.largeMode ? 4 : 3,
+                overflow: TextOverflow.ellipsis,
+                style: _lastSpoken.isEmpty
+                    ? theme.textTheme.bodyMedium
+                    : (s.largeMode ? theme.textTheme.headlineSmall : theme.textTheme.titleMedium)
+                        ?.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (!s.largeMode && _history.last != null)
+              IconButton(
+                tooltip: 'Répéter la dernière phrase',
+                icon: const Icon(Icons.replay),
+                onPressed: () => _replay(_history.last!),
+              ),
+          ]),
           if (_lastOriginal.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),

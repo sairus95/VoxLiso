@@ -48,6 +48,10 @@ class AppSettings {
     roiBottom = defaultRoiBottom;
     roiTopLandscape = defaultRoiTopLandscape;
     roiBottomLandscape = defaultRoiBottomLandscape;
+    screenTop = defaultScreenTop;
+    screenBottom = defaultScreenBottom;
+    screenTopLandscape = defaultScreenTopLandscape;
+    screenBottomLandscape = defaultScreenBottomLandscape;
   }
 
   /// Couper la phrase en cours quand un nouveau sous-titre apparaît.
@@ -85,6 +89,43 @@ class AppSettings {
   /// Langue de traduction : '' = pas de traduction, sinon fr / de / es / it.
   String get translateTo => _prefs.getString('translateTo') ?? '';
   set translateTo(String v) => _prefs.setString('translateTo', v);
+
+  /// Source des sous-titres : « camera » (télé, ordinateur) ou « screen »
+  /// (vidéos regardées sur le téléphone lui-même, Android seulement).
+  String get source => _prefs.getString('source') ?? 'camera';
+  set source(String v) => _prefs.setString('source', v);
+  bool get screenSource => source == 'screen';
+
+  /// Zone des sous-titres sur l'écran du téléphone, en portrait (vidéo en haut
+  /// de l'écran, comme YouTube) et en paysage (vidéo en plein écran).
+  static const double defaultScreenTop = 0.12;
+  static const double defaultScreenBottom = 0.45;
+  static const double defaultScreenTopLandscape = 0.65;
+  static const double defaultScreenBottomLandscape = 0.98;
+  double get screenTop => _prefs.getDouble('screenTop') ?? defaultScreenTop;
+  set screenTop(double v) => _prefs.setDouble('screenTop', v);
+  double get screenBottom => _prefs.getDouble('screenBottom') ?? defaultScreenBottom;
+  set screenBottom(double v) => _prefs.setDouble('screenBottom', v);
+  double get screenTopLandscape =>
+      _prefs.getDouble('screenTopL') ?? defaultScreenTopLandscape;
+  set screenTopLandscape(double v) => _prefs.setDouble('screenTopL', v);
+  double get screenBottomLandscape =>
+      _prefs.getDouble('screenBottomL') ?? defaultScreenBottomLandscape;
+  set screenBottomLandscape(double v) => _prefs.setDouble('screenBottomL', v);
+
+  /// Tutoriel déjà vu.
+  bool get tutorialSeen => _prefs.getBool('tutorialSeen') ?? false;
+  set tutorialSeen(bool v) => _prefs.setBool('tutorialSeen', v);
+
+  /// Mode grands boutons (personnes malvoyantes) : textes et boutons agrandis,
+  /// boutons pour déplacer la zone, annonces vocales.
+  bool get largeMode => _prefs.getBool('largeMode') ?? false;
+  set largeMode(bool v) => _prefs.setBool('largeMode', v);
+
+  /// Historique des sous-titres lus (JSON), conservé entre deux lancements.
+  String? get historyJson => _prefs.getString('history');
+  set historyJson(String? v) =>
+      v == null ? _prefs.remove('history') : _prefs.setString('history', v);
 
   /// Zoom de la caméra.
   double get zoom => _prefs.getDouble('zoom') ?? 1.0;
