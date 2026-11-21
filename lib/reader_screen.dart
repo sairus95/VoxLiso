@@ -8,6 +8,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'camera_input.dart';
+import 'language_detector.dart';
 import 'languages.dart';
 import 'roi_overlay.dart';
 import 'settings.dart';
@@ -28,6 +29,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   final TextRecognizer _recognizer = TextRecognizer(script: TextRecognitionScript.latin);
   final SpeechService _speech = SpeechService();
   late final SubtitleTracker _tracker;
+  late final LanguageDetector _langDetector;
+  bool _locking = false;
 
   CameraController? _controller;
   CameraDescription? _camera;
@@ -61,6 +64,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tracker = SubtitleTracker(stableFrames: s.stableFrames);
+    _langDetector = LanguageDetector(s.detectedLang);
     _speech.interrupt = s.interrupt;
     _zoom = s.zoom;
     _start();
@@ -72,9 +76,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     await _initCamera();
   }
 
+  /// Voix utilisée : la langue choisie, ou la dernière langue détectée en mode Auto.
+  SubtitleLanguage get _voice => languageFor(s.autoLang ? _langDetector.current : s.lang);
+
   Future<void> _applyVoice() async {
     final ok = await _speech.configure(
-      locale: languageFor(s.lang).ttsLocale,
+      locale: _voice.ttsLocale,
       rate: s.rate,
     );
     if (mounted) setState(() => _voiceMissing = !ok);
@@ -108,9 +115,6 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         return;
       }
       try {
-        await c.lockCaptureOrientation(DeviceOrientation.portraitUp);
-      } catch (_) {}
-      try {
         await c.setFocusMode(FocusMode.auto);
       } catch (_) {}
       try {
@@ -141,6 +145,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _controller = c;
         _error = null;
       });
+      c.addListener(_syncOrientation);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncOrientation());
       if (s.photoMode) _startPhotoLoop();
     } on CameraException catch (e) {
       _setError(e.code.contains('Access') || e.code.contains('ermission')
@@ -162,6 +168,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _stopPhotoLoop();
     final c = _controller;
     _controller = null;
+    c?.removeListener(_syncOrientation);
     if (mounted && !_closed) setState(() => _boxes = const []);
     if (c != null) {
       try {
@@ -169,6 +176,62 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       } catch (_) {}
       await c.dispose();
     }
+  }
+
+  // ---------------------------------------------------------- orientation
+  //
+  // L'image de la caméra est orientée comme l'interface : portrait, ou
+  // paysage du bon côté. Si la rotation automatique du téléphone est
+  // désactivée, l'interface reste en portrait et l'image aussi.
+
+  DeviceOrientation get _orientation {
+    final c = _controller;
+    if (c == null) return DeviceOrientation.portraitUp;
+    return c.value.lockedCaptureOrientation ?? c.value.deviceOrientation;
+  }
+
+  bool get _landscape => isLandscape(_orientation);
+
+  double get _roiTop => _landscape ? s.roiTopLandscape : s.roiTop;
+  double get _roiBottom => _landscape ? s.roiBottomLandscape : s.roiBottom;
+
+  void _setRoi(double top, double bottom) {
+    if (_landscape) {
+      s.roiTopLandscape = top;
+      s.roiBottomLandscape = bottom;
+    } else {
+      s.roiTop = top;
+      s.roiBottom = bottom;
+    }
+  }
+
+  void _syncOrientation() {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized || !mounted || _closed || _locking) return;
+    final uiLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    final device = c.value.deviceOrientation;
+    final locked = c.value.lockedCaptureOrientation;
+    DeviceOrientation want;
+    if (!uiLandscape) {
+      want = DeviceOrientation.portraitUp;
+    } else if (isLandscape(device)) {
+      want = device;
+    } else if (locked != null && isLandscape(locked)) {
+      want = locked;
+    } else {
+      want = DeviceOrientation.landscapeLeft;
+    }
+    if (locked == want) return;
+    _locking = true;
+    c.lockCaptureOrientation(want).catchError((_) {}).whenComplete(() {
+      _locking = false;
+      if (mounted && !_closed) setState(() {});
+    });
+  }
+
+  @override
+  void didChangeMetrics() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncOrientation());
   }
 
   @override
@@ -198,7 +261,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final cam = _camera;
     if (cam == null) return;
     final info = describeCameraImage(image);
-    final frame = buildInputImage(image, cam);
+    final frame = buildInputImage(image, cam, _orientation);
     if (frame == null) {
       _setDiag('⚠ Format d\'image non pris en charge : $info');
       return;
@@ -227,8 +290,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   ) {
     final w = upright.width;
     final h = upright.height;
-    final top = s.roiTop * h;
-    final bottom = s.roiBottom * h;
+    final top = _roiTop * h;
+    final bottom = _roiBottom * h;
 
     final all = <TextLine>[];
     final lines = <TextLine>[];
@@ -271,8 +334,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       );
       final toSay = _tracker.push(text);
       if (toSay != null && toSay.trim().isNotEmpty) {
-        _speech.say(toSay);
         setState(() => _lastSpoken = toSay);
+        if (s.autoLang) {
+          _sayDetected(text, toSay);
+        } else {
+          _speech.say(toSay);
+        }
       }
     }
     return (all: all, inZone: lines);
@@ -325,11 +392,15 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       final raw = jpegSize(bytes);
       Size upright;
       if (raw != null) {
-        // Téléphone en portrait : l'image « à l'endroit » est en hauteur.
-        upright = Size(math.min(raw.width, raw.height), math.max(raw.width, raw.height));
+        // L'image « à l'endroit » est en hauteur en portrait, en largeur en paysage.
+        final long = math.max(raw.width, raw.height);
+        final short = math.min(raw.width, raw.height);
+        upright = _landscape ? Size(long, short) : Size(short, long);
       } else {
         final p = c.value.previewSize ?? const Size(1920, 1080);
-        upright = Size(math.min(p.width, p.height), math.max(p.width, p.height));
+        final long = math.max(p.width, p.height);
+        final short = math.min(p.width, p.height);
+        upright = _landscape ? Size(long, short) : Size(short, long);
       }
       final info = raw == null
           ? 'Photo (taille inconnue)'
@@ -421,6 +492,21 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
   }
 
+  /// Mode Auto : identifie la langue sur le sous-titre complet, puis le dit
+  /// avec la voix correspondante.
+  Future<void> _sayDetected(String fullText, String toSay) async {
+    final before = _langDetector.current;
+    final code = await _langDetector.detect(fullText);
+    if (_closed || !_reading) return;
+    final lang = languageFor(code);
+    _speech.say(toSay, locale: lang.ttsLocale);
+    if (code != before) {
+      s.detectedLang = code;
+      final ok = await _speech.isAvailable(lang.ttsLocale);
+      if (mounted && !_closed) setState(() => _voiceMissing = !ok);
+    }
+  }
+
   void _setDiag(String text) {
     if (mounted && !_closed) setState(() => _diag = text);
   }
@@ -476,13 +562,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       showDragHandle: true,
       builder: (_) => SettingsSheet(
         settings: s,
+        voice: _voice,
         voiceMissing: _voiceMissing,
         onVoiceChanged: _applyVoice,
-        onTestVoice: () => _speech.say(languageFor(s.lang).sample),
-        onResetZone: () => setState(() {
-          s.roiTop = AppSettings.defaultRoiTop;
-          s.roiBottom = AppSettings.defaultRoiBottom;
-        }),
+        onTestVoice: () => _speech.say(_voice.sample, locale: _voice.ttsLocale),
+        onResetZone: () => setState(s.resetZones),
       ),
     );
     _speech.interrupt = s.interrupt;
@@ -497,6 +581,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.removeObserver(this);
     _releaseCamera();
     _recognizer.close();
+    _langDetector.close();
     _speech.stop();
     WakelockPlus.disable();
     super.dispose();
@@ -507,8 +592,20 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final landscapeUi = MediaQuery.orientationOf(context) == Orientation.landscape;
+    final banner = _voiceMissing
+        ? MaterialBanner(
+            content: Text(
+              'La voix « ${_voice.label} » n\'est pas installée sur ce téléphone. '
+              'Installez-la dans les réglages de synthèse vocale du téléphone.',
+            ),
+            actions: const [SizedBox.shrink()],
+          )
+        : null;
+
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: landscapeUi ? 44 : null,
         title: const Text('VoxLiso'),
         actions: [
           IconButton(
@@ -529,57 +626,75 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         ],
       ),
       body: SafeArea(
-        child: Column(children: [
-          Expanded(child: Center(child: _buildPreview())),
-          if (_voiceMissing)
-            MaterialBanner(
-              content: Text(
-                'La voix « ${languageFor(s.lang).label} » n\'est pas installée sur ce téléphone. '
-                'Installez-la dans les réglages de synthèse vocale du téléphone.',
-              ),
-              actions: const [SizedBox.shrink()],
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildLastText(theme),
-                if (_maxZoom > _minZoom) _buildZoom(),
-                if (_maxExposure > _minExposure) _buildExposure(),
-                const SizedBox(height: 8),
-                SegmentedButton<String>(
-                  segments: [
-                    for (final l in kLanguages)
-                      ButtonSegment(
-                        value: l.code,
-                        label: Text(l.short),
-                        tooltip: l.label,
-                      ),
-                  ],
-                  selected: {s.lang},
-                  showSelectedIcon: false,
-                  onSelectionChanged: (v) => _setLanguage(v.first),
-                ),
-                const SizedBox(height: 12),
+        child: landscapeUi
+            // Paysage : aperçu à gauche, commandes à droite.
+            ? Row(children: [
+                Expanded(child: Center(child: _buildPreview())),
                 SizedBox(
-                  height: 64,
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _reading ? Colors.red.shade700 : null,
-                      textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  width: 330,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (banner != null) banner,
+                        ..._buildControls(theme),
+                      ],
                     ),
-                    onPressed: _controller == null ? null : _toggleReading,
-                    icon: Icon(_reading ? Icons.stop : Icons.record_voice_over, size: 28),
-                    label: Text(_reading ? 'Arrêter la lecture' : 'Lire les sous-titres'),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ]),
+              ])
+            // Portrait : aperçu en haut, commandes en bas.
+            : Column(children: [
+                Expanded(child: Center(child: _buildPreview())),
+                if (banner != null) banner,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: _buildControls(theme),
+                  ),
+                ),
+              ]),
       ),
     );
+  }
+
+  List<Widget> _buildControls(ThemeData theme) {
+    return [
+      _buildLastText(theme),
+      if (_maxZoom > _minZoom) _buildZoom(),
+      if (_maxExposure > _minExposure) _buildExposure(),
+      const SizedBox(height: 8),
+      SegmentedButton<String>(
+        segments: [
+          const ButtonSegment(
+            value: 'auto',
+            label: Text('Auto'),
+            tooltip: 'Détection automatique de la langue',
+          ),
+          for (final l in kLanguages)
+            ButtonSegment(value: l.code, label: Text(l.short), tooltip: l.label),
+        ],
+        selected: {s.lang},
+        showSelectedIcon: false,
+        style: const ButtonStyle(visualDensity: VisualDensity.compact),
+        onSelectionChanged: (v) => _setLanguage(v.first),
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        height: 64,
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: _reading ? Colors.red.shade700 : null,
+            textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          onPressed: _controller == null ? null : _toggleReading,
+          icon: Icon(_reading ? Icons.stop : Icons.record_voice_over, size: 28),
+          label: Text(_reading ? 'Arrêter la lecture' : 'Lire les sous-titres'),
+        ),
+      ),
+    ];
   }
 
   Widget _buildPreview() {
@@ -605,18 +720,24 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (c == null || !c.value.isInitialized) {
       return const CircularProgressIndicator();
     }
+    // Reconstruit l'aperçu à chaque changement d'orientation de la caméra,
+    // pour que la bande jaune reste alignée sur l'image.
+    return ValueListenableBuilder<CameraValue>(
+      valueListenable: c,
+      builder: (context, value, _) => _buildPreviewContent(c),
+    );
+  }
+
+  Widget _buildPreviewContent(CameraController c) {
     return AspectRatio(
-      aspectRatio: 1 / c.value.aspectRatio,
+      aspectRatio: _landscape ? c.value.aspectRatio : 1 / c.value.aspectRatio,
       child: Stack(fit: StackFit.expand, children: [
         CameraPreview(c),
         RoiOverlay(
-          top: s.roiTop,
-          bottom: s.roiBottom,
+          top: _roiTop,
+          bottom: _roiBottom,
           boxes: _boxes,
-          onChanged: (t, b) => setState(() {
-            s.roiTop = t;
-            s.roiBottom = b;
-          }),
+          onChanged: (t, b) => setState(() => _setRoi(t, b)),
           onChangeEnd: () {},
         ),
         if (_showDiag)
@@ -658,13 +779,28 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        _lastSpoken.isEmpty ? hint : _lastSpoken,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: _lastSpoken.isEmpty
-            ? theme.textTheme.bodyMedium
-            : theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (s.autoLang)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                'Langue détectée : ${_voice.label}',
+                style: theme.textTheme.labelMedium
+                    ?.copyWith(color: theme.colorScheme.primary),
+              ),
+            ),
+          Text(
+            _lastSpoken.isEmpty ? hint : _lastSpoken,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: _lastSpoken.isEmpty
+                ? theme.textTheme.bodyMedium
+                : theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }

@@ -7,8 +7,9 @@ import 'package:flutter_tts/flutter_tts.dart';
 /// Synthèse vocale avec une petite file d'attente.
 class SpeechService {
   final FlutterTts _tts = FlutterTts();
-  final Queue<String> _queue = Queue<String>();
+  final Queue<({String text, String? locale})> _queue = Queue();
   bool _speaking = false;
+  String? _locale;
 
   /// Si vrai, un nouveau sous-titre coupe celui en cours de lecture.
   bool interrupt = false;
@@ -41,19 +42,32 @@ class SpeechService {
       available = res == true || res == 1;
     } catch (_) {}
     await _tts.setLanguage(locale);
+    _locale = locale;
     // flutter_tts : 0.5 = vitesse normale sur Android comme sur iOS.
     await _tts.setSpeechRate((0.5 * rate).clamp(0.1, 1.0).toDouble());
     return available;
   }
 
-  void say(String text) {
+  /// La voix de [locale] est-elle installée sur le téléphone ?
+  Future<bool> isAvailable(String locale) async {
+    try {
+      final res = await _tts.isLanguageAvailable(locale);
+      return res == true || res == 1;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Dit [text], avec la voix de [locale] si elle est donnée (détection automatique).
+  void say(String text, {String? locale}) {
+    final item = (text: text, locale: locale);
     if (interrupt) {
       _queue
         ..clear()
-        ..add(text);
+        ..add(item);
       if (_speaking) _tts.stop();
     } else {
-      _queue.add(text);
+      _queue.add(item);
       while (_queue.length > _maxQueue) {
         _queue.removeFirst();
       }
@@ -66,7 +80,12 @@ class SpeechService {
     _speaking = true;
     try {
       while (_queue.isNotEmpty) {
-        final text = _queue.removeFirst();
+        final item = _queue.removeFirst();
+        final text = item.text;
+        if (item.locale != null && item.locale != _locale) {
+          await _tts.setLanguage(item.locale!);
+          _locale = item.locale;
+        }
         // Sécurité : ne jamais rester bloqué si la fin de lecture n'est pas signalée.
         final limit = Duration(seconds: 6 + text.length ~/ 6);
         try {

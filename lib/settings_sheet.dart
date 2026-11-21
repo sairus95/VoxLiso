@@ -7,6 +7,7 @@ class SettingsSheet extends StatefulWidget {
   const SettingsSheet({
     super.key,
     required this.settings,
+    required this.voice,
     required this.voiceMissing,
     required this.onVoiceChanged,
     required this.onTestVoice,
@@ -14,6 +15,9 @@ class SettingsSheet extends StatefulWidget {
   });
 
   final AppSettings settings;
+
+  /// Voix utilisée en ce moment (langue choisie ou détectée).
+  final SubtitleLanguage voice;
   final bool voiceMissing;
   final Future<void> Function() onVoiceChanged;
   final VoidCallback onTestVoice;
@@ -29,7 +33,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final lang = languageFor(s.lang);
+    final lang = widget.voice;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),

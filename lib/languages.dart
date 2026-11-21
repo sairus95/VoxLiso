@@ -52,3 +52,12 @@ const List<SubtitleLanguage> kLanguages = [
 
 SubtitleLanguage languageFor(String code) =>
     kLanguages.firstWhere((l) => l.code == code, orElse: () => kLanguages.first);
+
+/// Langue prise en charge correspondant à un code ML Kit (« fr », « de-AT »…), sinon null.
+SubtitleLanguage? supportedLanguage(String tag) {
+  final code = tag.split('-').first.toLowerCase();
+  for (final l in kLanguages) {
+    if (l.code == code) return l;
+  }
+  return null;
+}

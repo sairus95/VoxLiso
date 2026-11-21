@@ -26,7 +26,7 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 ### Réglages disponibles
 | Réglage | Effet |
 |---|---|
-| Langue (FR / DE / ES / IT) | Choisit la voix. Boutons directement sur l'écran principal. |
+| Langue (Auto / FR / DE / ES / IT) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Sinon, la langue choisie est imposée. |
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
 | Zoom | Pour « rapprocher » une télé éloignée. |
 | Luminosité | À baisser si l'écran de la télé apparaît « brûlé » (blanc) sur l'aperçu. |
@@ -71,7 +71,9 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 ---
 
 ## Conseils d'utilisation
-- Tenez le téléphone **en portrait**, le plus immobile possible (un petit support aide beaucoup).
+- **En paysage**, sur un petit support face à la télé : c'est la meilleure position. La télé remplit l'image, les sous-titres sont plus grands et le téléphone ne bouge pas. Activez la rotation automatique de l'écran du téléphone.
+- **En portrait**, tenez le téléphone le plus immobile possible.
+- La bande jaune est mémorisée séparément pour le portrait et pour le paysage.
 - Utilisez le **zoom** pour que les sous-titres occupent une bonne partie de la largeur de l'aperçu.
 - Évitez les reflets sur l'écran (lampe, fenêtre).
 - Si la voix ne parle pas dans la bonne langue : installez la voix correspondante.
@@ -88,7 +90,7 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 ## Organisation du code
 | Fichier | Rôle |
 |---|---|
-| `lib/main.dart` | Démarrage, thème, verrouillage en portrait |
+| `lib/main.dart` | Démarrage, thème, orientations autorisées (portrait et paysage) |
 | `lib/reader_screen.dart` | Écran principal : caméra, analyse des images, commandes |
 | `lib/camera_input.dart` | Conversion des images caméra pour ML Kit (Android NV21 / iOS BGRA) |
 | `lib/roi_overlay.dart` | Bande jaune réglable et cadres verts |
@@ -96,10 +98,12 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 | `lib/subtitle_tracker.dart` | Décide quand lire un sous-titre (stabilité, doublons, défilement) |
 | `lib/speech_service.dart` | Synthèse vocale et file d'attente |
 | `lib/languages.dart` | Les 4 langues et leurs voix |
+| `lib/language_detector.dart` | Détection automatique de la langue (ML Kit Language ID) |
 | `lib/settings.dart`, `lib/settings_sheet.dart` | Réglages enregistrés et écran des réglages |
-| `tool/setup.dart` | Configure les dossiers Android/iOS générés |
+| `tool/setup.dart` | Configure les dossiers Android/iOS générés (et installe l'icône) |
+| `tool/icone/`, `assets/launcher/` | Dessin de l'icône et images générées pour Android et iOS |
 | `test/subtitle_logic_test.dart` | Tests de la logique des sous-titres |
 
 Ajouter une langue à alphabet latin (anglais, portugais…) : une ligne dans `lib/languages.dart`.
 
-Bibliothèques : `camera`, `google_mlkit_text_recognition`, `flutter_tts`, `wakelock_plus`, `shared_preferences`.
+Bibliothèques : `camera`, `camera_android`, `google_mlkit_text_recognition`, `google_mlkit_language_id`, `flutter_tts`, `wakelock_plus`, `shared_preferences`.

@@ -7,14 +7,21 @@ class AppSettings {
   final SharedPreferences _prefs;
 
   static const double defaultRoiTop = 0.40;
+  static const double defaultRoiTopLandscape = 0.62;
+  static const double defaultRoiBottomLandscape = 0.95;
   static const double defaultRoiBottom = 0.80;
 
   static Future<AppSettings> load() async =>
       AppSettings._(await SharedPreferences.getInstance());
 
-  /// Code de langue : fr, de, es, it.
-  String get lang => _prefs.getString('lang') ?? 'fr';
+  /// Code de langue : auto (détection automatique), fr, de, es, it.
+  String get lang => _prefs.getString('lang') ?? 'auto';
   set lang(String v) => _prefs.setString('lang', v);
+  bool get autoLang => lang == 'auto';
+
+  /// Dernière langue détectée en mode automatique.
+  String get detectedLang => _prefs.getString('detectedLang') ?? 'fr';
+  set detectedLang(String v) => _prefs.setString('detectedLang', v);
 
   /// Vitesse de la voix : 1.0 = normale (de 0.5 à 2.0).
   double get rate => _prefs.getDouble('rate') ?? 1.0;
@@ -25,6 +32,21 @@ class AppSettings {
   set roiTop(double v) => _prefs.setDouble('roiTop', v);
   double get roiBottom => _prefs.getDouble('roiBottom') ?? defaultRoiBottom;
   set roiBottom(double v) => _prefs.setDouble('roiBottom', v);
+
+  /// Zone des sous-titres quand le téléphone est en paysage
+  /// (la télé occupe alors toute l'image : sous-titres plus bas).
+  double get roiTopLandscape => _prefs.getDouble('roiTopL') ?? defaultRoiTopLandscape;
+  set roiTopLandscape(double v) => _prefs.setDouble('roiTopL', v);
+  double get roiBottomLandscape =>
+      _prefs.getDouble('roiBottomL') ?? defaultRoiBottomLandscape;
+  set roiBottomLandscape(double v) => _prefs.setDouble('roiBottomL', v);
+
+  void resetZones() {
+    roiTop = defaultRoiTop;
+    roiBottom = defaultRoiBottom;
+    roiTopLandscape = defaultRoiTopLandscape;
+    roiBottomLandscape = defaultRoiBottomLandscape;
+  }
 
   /// Couper la phrase en cours quand un nouveau sous-titre apparaît.
   bool get interrupt => _prefs.getBool('interrupt') ?? false;

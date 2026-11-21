@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' show Size;
 
 import 'package:camera/camera.dart';
+import 'package:flutter/services.dart' show DeviceOrientation;
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 /// Image prête pour ML Kit, avec la taille « à l'endroit » (portrait)
@@ -13,9 +14,23 @@ class FrameInput {
   final Size uprightSize;
 }
 
-/// Convertit une image du flux caméra pour ML Kit.
-/// L'application est bloquée en portrait et utilise la caméra arrière.
-FrameInput? buildInputImage(CameraImage image, CameraDescription camera) {
+const Map<DeviceOrientation, int> _orientationDegrees = {
+  DeviceOrientation.portraitUp: 0,
+  DeviceOrientation.landscapeLeft: 90,
+  DeviceOrientation.portraitDown: 180,
+  DeviceOrientation.landscapeRight: 270,
+};
+
+bool isLandscape(DeviceOrientation o) =>
+    o == DeviceOrientation.landscapeLeft || o == DeviceOrientation.landscapeRight;
+
+/// Convertit une image du flux caméra pour ML Kit (caméra arrière),
+/// selon l'orientation du téléphone : portrait ou paysage.
+FrameInput? buildInputImage(
+  CameraImage image,
+  CameraDescription camera,
+  DeviceOrientation orientation,
+) {
   final w = image.width.toDouble();
   final h = image.height.toDouble();
   if (image.planes.isEmpty) return null;
@@ -38,9 +53,14 @@ FrameInput? buildInputImage(CameraImage image, CameraDescription camera) {
     );
   }
 
-  // Android : téléphone en portrait + caméra arrière => rotation = orientation du capteur.
-  final rotation = InputImageRotationValue.fromRawValue(camera.sensorOrientation) ??
-      InputImageRotation.rotation90deg;
+  // Android : l'image brute est dans le sens du capteur ; on indique à ML Kit
+  // de combien la tourner pour la remettre à l'endroit.
+  final compensation = _orientationDegrees[orientation] ?? 0;
+  final degrees = camera.lensDirection == CameraLensDirection.front
+      ? (camera.sensorOrientation + compensation) % 360
+      : (camera.sensorOrientation - compensation + 360) % 360;
+  final rotation =
+      InputImageRotationValue.fromRawValue(degrees) ?? InputImageRotation.rotation90deg;
 
   final Uint8List bytes;
   if (image.planes.length == 1) {

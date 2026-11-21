@@ -15,6 +15,7 @@ void main() {
   var ok = true;
   ok &= _android();
   ok &= _ios();
+  ok &= _icons();
   _removeDefaultWidgetTest();
   stdout.writeln(ok
       ? '\n✅ Configuration terminée. Lancez : flutter run'
@@ -164,6 +165,33 @@ bool _ios() {
     podfile.writeAsStringSync(_podfile);
   }
   stdout.writeln('✔ Podfile : iOS minimum $iosTarget');
+  return true;
+}
+
+/// Remplace l'icône Flutter par défaut par celle de VoxLiso
+/// (fichiers générés par tool/icone/make_icons.py dans assets/launcher).
+bool _icons() {
+  var count = 0;
+  void copyTree(String from, String to) {
+    final src = Directory(from);
+    if (!src.existsSync()) return;
+    for (final e in src.listSync(recursive: true).whereType<File>()) {
+      final rel = e.path.substring(src.path.length + 1);
+      final dest = File('$to/$rel');
+      dest.parent.createSync(recursive: true);
+      e.copySync(dest.path);
+      count++;
+    }
+  }
+
+  if (!Directory('assets/launcher').existsSync()) {
+    stderr.writeln('⚠️  assets/launcher introuvable : icône par défaut conservée');
+    return true;
+  }
+  copyTree('assets/launcher/android/res', 'android/app/src/main/res');
+  copyTree('assets/launcher/ios/AppIcon.appiconset',
+      'ios/Runner/Assets.xcassets/AppIcon.appiconset');
+  stdout.writeln('✔ Icône VoxLiso : $count fichiers copiés');
   return true;
 }
 

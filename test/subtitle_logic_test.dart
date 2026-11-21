@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voxliso/language_detector.dart';
 import 'package:voxliso/subtitle_tracker.dart';
 import 'package:voxliso/text_tools.dart';
 
@@ -55,6 +56,34 @@ void main() {
       expect(t.push('Le gouvernement a annoncé'), 'Le gouvernement a annoncé');
       expect(t.push('Le gouvernement a annoncé ce matin une réforme'), 'ce matin une réforme');
       expect(t.push('ce matin une réforme des retraites'), 'des retraites');
+    });
+  });
+
+  group('LanguageDecision', () {
+    test('change tout de suite sur un texte long et sûr', () {
+      final d = LanguageDecision('fr');
+      expect(d.update('Ich habe heute keine Zeit für dich.', {'de': 0.95}), 'de');
+    });
+
+    test('ignore les sous-titres trop courts', () {
+      final d = LanguageDecision('fr');
+      expect(d.update('Ja.', {'de': 0.99}), 'fr');
+    });
+
+    test('ignore les langues non prises en charge', () {
+      final d = LanguageDecision('it');
+      expect(d.update('This is an English sentence here.', {'en': 0.98}), 'it');
+    });
+
+    test('identification moyenne : il faut deux sous-titres de suite', () {
+      final d = LanguageDecision('fr');
+      expect(d.update('Vamos a la playa', {'es': 0.55}), 'fr');
+      expect(d.update('Dónde está mi casa', {'es': 0.6}), 'es');
+    });
+
+    test('accepte les codes régionaux', () {
+      final d = LanguageDecision('fr');
+      expect(d.update('Questa è una frase italiana lunga.', {'it-IT': 0.9}), 'it');
     });
   });
 }

@@ -6,8 +6,12 @@ import 'settings.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // L'analyse de l'image suppose un téléphone tenu en portrait.
-  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  // Portrait (téléphone tenu en main) ou paysage (téléphone posé face à la télé).
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
   final settings = await AppSettings.load();
   runApp(VoxLisoApp(settings: settings));
 }
