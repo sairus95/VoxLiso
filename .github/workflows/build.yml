@@ -1,0 +1,51 @@
+# Compile l'application automatiquement sur GitHub (gratuit), sans rien
+# installer sur votre ordinateur. L'APK Android est téléchargeable dans
+# l'onglet « Actions » > dernière exécution > « Artifacts ».
+name: Compiler l'application
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Générer les dossiers Android/iOS
+        run: flutter create --platforms=android,ios --org com.voixsoustitres --project-name voix_sous_titres .
+      - name: Configurer (caméra, voix, versions minimales)
+        run: dart run tool/setup.dart
+      - run: flutter pub get
+      - name: Tests de la logique des sous-titres
+        run: flutter test
+      - name: Compiler l'APK
+        run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: voix-sous-titres-android
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  ios:
+    # Vérifie que la version iPhone compile. Pour l'installer sur un iPhone,
+    # il faut la signer avec un compte Apple (voir README).
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create --platforms=android,ios --org com.voixsoustitres --project-name voix_sous_titres .
+      - run: dart run tool/setup.dart
+      - run: flutter pub get
+      - name: Compiler pour iPhone (sans signature)
+        run: flutter build ios --release --no-codesign
