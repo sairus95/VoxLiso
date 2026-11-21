@@ -115,7 +115,8 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 | `native/android/` | Code Kotlin : capture de l'écran (MediaProjection) + OCR ML Kit natif, installé par `tool/setup.dart` |
 | `lib/settings.dart`, `lib/settings_sheet.dart` | Réglages enregistrés et écran des réglages |
 | `tool/setup.dart` | Configure les dossiers Android/iOS générés (et installe l'icône) |
-| `tool/icone/`, `assets/launcher/` | Dessin de l'icône et images générées pour Android et iOS |
+| `lib/logo.dart` | Logo (bulle-onde) et nom « VoxLiso » dessinés dans l'application |
+| `tool/icone/`, `assets/launcher/` | Logo « Bulle-onde » (jaune #FFC93C, bleu nuit #12204A) et images générées pour Android et iOS |
 | `test/subtitle_logic_test.dart` | Tests de la logique des sous-titres |
 
 Ajouter une langue à alphabet latin (anglais, portugais…) : une ligne dans `lib/languages.dart`.

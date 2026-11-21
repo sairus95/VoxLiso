@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'logo.dart';
+
 /// Ligne de texte trouvée par l'OCR (en fractions 0..1 de l'image).
 class DetectedBox {
   const DetectedBox(this.rect, this.inZone);
@@ -105,7 +107,7 @@ class RoiOverlay extends StatelessWidget {
               ),
               child: const Text(
                 'Zone des sous-titres',
-                style: TextStyle(color: Colors.yellowAccent, fontSize: 12),
+                style: TextStyle(color: kBrandYellow, fontSize: 12),
               ),
             ),
           ),
@@ -139,7 +141,7 @@ class RoiOverlay extends StatelessWidget {
               width: 72,
               height: 10,
               decoration: BoxDecoration(
-                color: Colors.yellowAccent,
+                color: kBrandYellow,
                 borderRadius: BorderRadius.circular(5),
                 boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 4)],
               ),
@@ -168,7 +170,7 @@ class _RoiPainter extends CustomPainter {
     canvas.drawRect(
       band.deflate(1),
       Paint()
-        ..color = Colors.yellowAccent
+        ..color = kBrandYellow
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );

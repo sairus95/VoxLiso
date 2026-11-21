@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
+import 'logo.dart';
 import 'settings.dart';
 
 /// Tutoriel du premier lancement : placer le téléphone, la bande jaune,
@@ -114,13 +115,25 @@ class _TutorialScreenState extends State<TutorialScreen> {
                 final p = _pages[i];
                 return LayoutBuilder(builder: (context, c) {
                   final wide = c.maxWidth > c.maxHeight;
-                  final picture = Semantics(
-                    excludeSemantics: true,
-                    child: CustomPaint(
-                      size: Size.infinite,
-                      painter: _TutorialPainter(p.picture, theme.colorScheme.primary),
-                    ),
-                  );
+                  final picture = p.picture == _Picture.welcome
+                      ? Center(
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [
+                            LogoMark(size: (c.maxWidth * 0.4).clamp(96.0, 200.0).toDouble()),
+                            const SizedBox(height: 20),
+                            const Wordmark(fontSize: 44),
+                            const SizedBox(height: 6),
+                            Text('Vos sous-titres, lus à voix haute.',
+                                style: theme.textTheme.bodyLarge
+                                    ?.copyWith(color: const Color(0xFFC9D2EA))),
+                          ]),
+                        )
+                      : Semantics(
+                          excludeSemantics: true,
+                          child: CustomPaint(
+                            size: Size.infinite,
+                            painter: _TutorialPainter(p.picture, theme.colorScheme.primary),
+                          ),
+                        );
                   final texts = Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,7 +225,7 @@ class _TutorialPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = s * 0.025
       ..strokeCap = StrokeCap.round;
-    final fill = Paint()..color = const Color(0xFF1F1912);
+    final fill = Paint()..color = kBrandNavy;
     final white = Paint()..color = Colors.white;
 
     Rect tv(double w, double h, Offset center) =>
@@ -303,7 +316,7 @@ class _TutorialPainter extends CustomPainter {
         canvas.drawRect(
           band,
           Paint()
-            ..color = Colors.yellowAccent
+            ..color = kBrandYellow
             ..style = PaintingStyle.stroke
             ..strokeWidth = s * 0.012,
         );
@@ -330,7 +343,7 @@ class _TutorialPainter extends CustomPainter {
           RRect.fromRectAndRadius(
               Rect.fromCenter(center: handle, width: s * 0.16, height: s * 0.03),
               Radius.circular(s * 0.015)),
-          Paint()..color = Colors.yellowAccent,
+          Paint()..color = kBrandYellow,
         );
         canvas.drawCircle(handle.translate(s * 0.12, -s * 0.1), s * 0.045,
             Paint()..color = Colors.white.withValues(alpha: 0.85));
@@ -383,7 +396,7 @@ class _TutorialPainter extends CustomPainter {
         canvas.drawRRect(rr, stroke);
         final video = Rect.fromLTWH(
             phone.left + s * 0.03, phone.top + s * 0.1, phone.width - s * 0.06, s * 0.22);
-        canvas.drawRect(video, Paint()..color = const Color(0xFF3A3024));
+        canvas.drawRect(video, Paint()..color = const Color(0xFF2A3A6B));
         canvas.drawRRect(
           RRect.fromRectAndRadius(
             Rect.fromCenter(

@@ -9,6 +9,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'camera_input.dart';
 import 'history.dart';
+import 'logo.dart';
 import 'language_detector.dart';
 import 'languages.dart';
 import 'roi_overlay.dart';
@@ -912,7 +913,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: landscapeUi ? 44 : null,
-        title: const Text('VoxLiso'),
+        title: Row(mainAxisSize: MainAxisSize.min, children: [
+          LogoMark(size: landscapeUi ? 26 : 30),
+          const SizedBox(width: 10),
+          Wordmark(fontSize: landscapeUi ? 19 : 22),
+        ]),
         actions: [
           IconButton(
             tooltip: 'Historique des sous-titres',
@@ -1218,7 +1223,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
               aspectRatio: land ? 19.5 / 9 : 9 / 19.5,
               child: Container(
                 decoration: BoxDecoration(
-                  color: const Color(0xFF15110C),
+                  color: kBrandNavy,
                   border: Border.all(color: theme.colorScheme.outline, width: 3),
                   borderRadius: BorderRadius.circular(18),
                 ),
@@ -1231,11 +1236,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                       child: FractionallySizedBox(
                         heightFactor: 0.28,
                         widthFactor: 1,
-                        child: ColoredBox(color: Color(0xFF3A3024)),
+                        child: ColoredBox(color: Color(0xFF2A3A6B)),
                       ),
                     )
                   else
-                    const ColoredBox(color: Color(0xFF3A3024)),
+                    const ColoredBox(color: Color(0xFF2A3A6B)),
                   RoiOverlay(
                     top: top,
                     bottom: bottom,
