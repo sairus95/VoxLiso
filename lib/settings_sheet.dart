@@ -283,6 +283,26 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ],
         onChanged: (v) => setState(() => s.translateTo = v ?? ''),
       ),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<String>(
+        initialValue: s.autoTranslateTo,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'Sous-titres en anglais, portugais… : traduire en',
+        ),
+        items: [
+          for (final l in kLanguages) DropdownMenuItem(value: l.code, child: Text(l.label)),
+        ],
+        onChanged: (v) => setState(() => s.autoTranslateTo = v ?? 'fr'),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        'En mode Auto, VoxLiso reconnaît aussi l\'anglais, le portugais, le néerlandais, '
+        'le polonais… et les traduit automatiquement. La langue nécessaire se télécharge '
+        'toute seule en Wi-Fi au premier besoin (environ 30 Mo). Avec une clé DeepL, la '
+        'traduction est immédiate et de meilleure qualité.',
+        style: theme.textTheme.bodySmall,
+      ),
       if (target.isNotEmpty) ...[
         const SizedBox(height: 8),
         Text(

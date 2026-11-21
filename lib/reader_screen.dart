@@ -98,7 +98,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tracker = SubtitleTracker(stableFrames: s.stableFrames);
-    _langDetector = LanguageDetector(s.detectedLang);
+    // Mode Auto : les autres langues en alphabet latin (anglais, portugais…)
+    // sont aussi reconnues, pour être traduites.
+    _langDetector = LanguageDetector(
+      s.detectedLang,
+      accept: (code) =>
+          kOtherLanguages.containsKey(code) && SubtitleTranslator.canTranslate(code),
+    );
     _translator.deeplKey = s.deeplKey;
     _history.decode(s.historyJson);
     if (ScreenCapture.isAvailable) {
@@ -653,14 +659,21 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (_closed || !_reading) return;
     if (s.autoLang && lang != before) {
       s.detectedLang = lang;
-      final ok = await _speech.isAvailable(languageFor(lang).ttsLocale);
-      if (mounted && !_closed) setState(() => _voiceMissing = !ok);
+      if (isReadLanguage(lang)) {
+        final ok = await _speech.isAvailable(languageFor(lang).ttsLocale);
+        if (mounted && !_closed) setState(() => _voiceMissing = !ok);
+      } else if (mounted && !_closed) {
+        setState(() {}); // affiche la langue détectée
+      }
     }
 
     var speakLang = lang;
     var out = segments;
     String? warning;
-    final target = s.translateTo;
+    // Langue de lecture : celle choisie dans « Traduction » ; sinon, une langue
+    // autre que fr/de/es/it (anglais, portugais…) est traduite automatiquement.
+    var target = s.translateTo;
+    if (target.isEmpty && !isReadLanguage(lang)) target = s.autoTranslateTo;
     if (target.isNotEmpty && target != lang) {
       final result = await _translator.translateAll(segments, lang, target);
       if (result != null) {
@@ -671,15 +684,20 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         if (result.engine != 'DeepL' && s.deeplKey.isNotEmpty) {
           warning = _translator.deeplError;
         }
+      } else if (_translator.autoDownloading.isNotEmpty) {
+        warning = 'Téléchargement de ${_translator.autoDownloading.map(languageName).join(' et ')} '
+            'pour la traduction (en Wi-Fi). En attendant : lecture dans la langue d\'origine.';
       } else {
         warning = _translator.deeplError ??
-            'Traduction impossible : téléchargez ${languageFor(lang).label} et '
-                '${languageFor(target).label} dans les réglages (section Traduction).';
+            'Traduction impossible : téléchargez ${languageName(lang)} et '
+                '${languageName(target)} dans les réglages (section Traduction).';
       }
     }
     if (_closed || !_reading) return;
 
-    final locale = languageFor(speakLang).ttsLocale;
+    // Langue lue par une voix (fr/de/es/it) : sa voix ; autre langue non
+    // traduite : la voix du téléphone pour cette langue, si elle existe.
+    final locale = isReadLanguage(speakLang) ? languageFor(speakLang).ttsLocale : speakLang;
     final first = _primaryVoice(speakLang);
     final second = _secondVoice(speakLang);
     _speech.sayAll([
@@ -1368,7 +1386,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 [
-                  if (s.autoLang) 'Langue détectée : ${_voice.label}',
+                  if (s.autoLang) 'Langue détectée : ${languageName(_langDetector.current)}',
                   if (s.translateTo.isNotEmpty)
                     'lu en ${languageFor(s.translateTo).label}'
                         '${_lastOriginal.isNotEmpty && _translationEngine.isNotEmpty ? ' ($_translationEngine)' : ''}',

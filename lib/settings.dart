@@ -144,6 +144,11 @@ class AppSettings {
   bool get frame169 => _prefs.getBool('frame169') ?? true;
   set frame169(bool v) => _prefs.setBool('frame169', v);
 
+  /// Sous-titres dans une autre langue que fr/de/es/it (anglais, portugais…) :
+  /// traduits automatiquement dans cette langue (fr par défaut).
+  String get autoTranslateTo => _prefs.getString('autoTranslateTo') ?? 'fr';
+  set autoTranslateTo(String v) => _prefs.setString('autoTranslateTo', v);
+
   /// Clé de l'API DeepL (facultative) : traduction en ligne de meilleure qualité.
   String get deeplKey => _prefs.getString('deeplKey') ?? '';
   set deeplKey(String v) => _prefs.setString('deeplKey', v.trim());

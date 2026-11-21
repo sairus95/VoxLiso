@@ -30,14 +30,17 @@ class SubtitleTranslator {
   final Map<String, bool> _downloaded = {};
   final Set<String> _downloading = {};
 
-  static const Map<String, TranslateLanguage> _languages = {
-    'fr': TranslateLanguage.french,
-    'de': TranslateLanguage.german,
-    'es': TranslateLanguage.spanish,
-    'it': TranslateLanguage.italian,
-  };
+  static TranslateLanguage? _lang(String code) => TranslateLanguage.fromRawValue(code);
 
-  static String _bcp(String code) => _languages[code]!.bcpCode;
+  /// La traduction hors ligne connaît-elle cette langue ?
+  static bool canTranslate(String code) => _lang(code) != null;
+
+  static String _bcp(String code) => _lang(code)!.bcpCode;
+
+  static const List<String> _main = ['fr', 'de', 'es', 'it'];
+
+  /// Langues en cours de téléchargement automatique (Wi-Fi), pour l'afficher.
+  final Set<String> autoDownloading = {};
 
   bool isDownloading(String code) => _downloading.contains(code);
 
@@ -45,7 +48,7 @@ class SubtitleTranslator {
   bool? knownDownloaded(String code) => _downloaded[code];
 
   Future<bool> isDownloaded(String code) async {
-    if (!_languages.containsKey(code)) return false;
+    if (!canTranslate(code)) return false;
     try {
       final ok = await _models.isModelDownloaded(_bcp(code));
       _downloaded[code] = ok;
@@ -56,14 +59,14 @@ class SubtitleTranslator {
   }
 
   Future<void> refresh() async {
-    for (final code in _languages.keys) {
+    for (final code in _main) {
       await isDownloaded(code);
     }
   }
 
   /// Télécharge une langue (une seule fois). [wifiOnly] : attendre le Wi-Fi.
   Future<bool> download(String code, {bool wifiOnly = false}) async {
-    if (!_languages.containsKey(code) || _downloading.contains(code)) return false;
+    if (!canTranslate(code) || _downloading.contains(code)) return false;
     _downloading.add(code);
     try {
       final ok = await _models.downloadModel(_bcp(code), isWifiRequired: wifiOnly);
@@ -90,13 +93,21 @@ class SubtitleTranslator {
   /// n'est pas téléchargée ou si la traduction échoue.
   Future<String?> translate(String text, String from, String to) async {
     if (from == to) return text;
-    if (!_languages.containsKey(from) || !_languages.containsKey(to)) return null;
+    if (!canTranslate(from) || !canTranslate(to)) return null;
     final fromOk = _downloaded[from] ?? await isDownloaded(from);
     final toOk = _downloaded[to] ?? await isDownloaded(to);
-    if (!fromOk || !toOk) return null;
+    if (!fromOk || !toOk) {
+      // Langue manquante : téléchargement automatique en Wi-Fi, pour la suite.
+      for (final c in [if (!fromOk) from, if (!toOk) to]) {
+        if (autoDownloading.add(c)) {
+          download(c, wifiOnly: true).whenComplete(() => autoDownloading.remove(c));
+        }
+      }
+      return null;
+    }
     final t = _translators.putIfAbsent(
       '$from>$to',
-      () => OnDeviceTranslator(sourceLanguage: _languages[from]!, targetLanguage: _languages[to]!),
+      () => OnDeviceTranslator(sourceLanguage: _lang(from)!, targetLanguage: _lang(to)!),
     );
     try {
       final out = await t.translateText(text);
@@ -139,7 +150,8 @@ class SubtitleTranslator {
         ..contentType = ContentType.json;
       req.write(jsonEncode({
         'text': texts,
-        'source_lang': from.toUpperCase(),
+        // DeepL écrit le norvégien « NB ».
+        'source_lang': from == 'no' ? 'NB' : from.toUpperCase(),
         'target_lang': to.toUpperCase(),
       }));
       final res = await req.close().timeout(const Duration(seconds: 5));

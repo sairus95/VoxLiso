@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voxliso/history.dart';
 import 'package:voxliso/language_detector.dart';
+import 'package:voxliso/languages.dart';
 import 'package:voxliso/subtitle_tracker.dart';
 import 'package:voxliso/text_tools.dart';
 import 'package:voxliso/voices.dart';
@@ -96,6 +97,17 @@ void main() {
     test('ignore les langues non prises en charge', () {
       final d = LanguageDecision('it');
       expect(d.update('This is an English sentence here.', {'en': 0.98}), 'it');
+    });
+
+    test('reconnaît une autre langue à traduire (anglais)', () {
+      final d = LanguageDecision('fr', accept: (c) => kOtherLanguages.containsKey(c));
+      expect(d.update('This is an English sentence here.', {'en': 0.98}), 'en');
+      expect(d.update('Où est la gare, s\'il vous plaît ?', {'fr': 0.97}), 'fr');
+    });
+
+    test('ignore « und » (langue indéterminée)', () {
+      final d = LanguageDecision('de', accept: (c) => true);
+      expect(d.update('xxxx yyyy zzzz wwww', {'und': 1.0}), 'de');
     });
 
     test('identification moyenne : il faut deux sous-titres de suite', () {

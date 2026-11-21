@@ -61,3 +61,48 @@ SubtitleLanguage? supportedLanguage(String tag) {
   }
   return null;
 }
+
+/// Autres langues en alphabet latin (lisibles par la reconnaissance de texte),
+/// traduites automatiquement : nom en français.
+const Map<String, String> kOtherLanguages = {
+  'en': 'Anglais',
+  'pt': 'Portugais',
+  'nl': 'Néerlandais',
+  'pl': 'Polonais',
+  'ro': 'Roumain',
+  'sv': 'Suédois',
+  'da': 'Danois',
+  'no': 'Norvégien',
+  'fi': 'Finnois',
+  'cs': 'Tchèque',
+  'sk': 'Slovaque',
+  'hu': 'Hongrois',
+  'tr': 'Turc',
+  'ca': 'Catalan',
+  'hr': 'Croate',
+  'sl': 'Slovène',
+  'lt': 'Lituanien',
+  'lv': 'Letton',
+  'et': 'Estonien',
+  'sq': 'Albanais',
+  'id': 'Indonésien',
+  'ms': 'Malais',
+  'vi': 'Vietnamien',
+  'tl': 'Tagalog',
+  'sw': 'Swahili',
+  'af': 'Afrikaans',
+  'ga': 'Irlandais',
+  'cy': 'Gallois',
+  'is': 'Islandais',
+  'gl': 'Galicien',
+  'mt': 'Maltais',
+  'eo': 'Espéranto',
+};
+
+/// Nom affichable d'une langue : celui des 4 langues lues, sinon le nom
+/// français d'une autre langue, sinon son code.
+String languageName(String code) =>
+    supportedLanguage(code)?.label ?? kOtherLanguages[code] ?? code.toUpperCase();
+
+/// Langue lue directement par une voix (fr, de, es, it) ?
+bool isReadLanguage(String code) => supportedLanguage(code) != null;

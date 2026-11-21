@@ -9,7 +9,11 @@ import 'languages.dart';
 /// on ne change de langue que sur un texte assez long et une identification
 /// sûre, ou si deux sous-titres de suite donnent la même nouvelle langue.
 class LanguageDecision {
-  LanguageDecision(this.current);
+  LanguageDecision(this.current, {this.accept});
+
+  /// Langues retenues en plus de fr/de/es/it (ex. l'anglais, pour le traduire).
+  /// null : seulement les 4 langues lues.
+  final bool Function(String code)? accept;
 
   /// Langue actuelle (fr, de, es, it).
   String current;
@@ -30,9 +34,11 @@ class LanguageDecision {
     String? best;
     var bestScore = 0.0;
     scores.forEach((tag, conf) {
-      final lang = supportedLanguage(tag);
-      if (lang != null && conf > bestScore) {
-        best = lang.code;
+      final code = tag.split('-').first.toLowerCase();
+      if (code == 'und') return; // langue indéterminée
+      final ok = supportedLanguage(code) != null || (accept?.call(code) ?? false);
+      if (ok && conf > bestScore) {
+        best = code;
         bestScore = conf;
       }
     });
@@ -65,7 +71,8 @@ class LanguageDecision {
 
 /// Détection automatique de la langue des sous-titres (ML Kit, hors ligne).
 class LanguageDetector {
-  LanguageDetector(String initial) : decision = LanguageDecision(initial);
+  LanguageDetector(String initial, {bool Function(String code)? accept})
+      : decision = LanguageDecision(initial, accept: accept);
 
   final LanguageIdentifier _identifier = LanguageIdentifier(confidenceThreshold: 0.1);
   final LanguageDecision decision;

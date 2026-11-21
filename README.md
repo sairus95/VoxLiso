@@ -30,7 +30,7 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 ### Réglages disponibles
 | Réglage | Effet |
 |---|---|
-| Langue (Auto / FR / DE / ES / IT) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Sinon, la langue choisie est imposée. |
+| Langue (Auto / FR / DE / ES / IT) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Les sous-titres dans une **autre langue** (anglais, portugais, néerlandais, polonais…) sont **traduits automatiquement** (en français par défaut ; langue téléchargée en Wi-Fi au premier besoin, ou DeepL). Sinon, la langue choisie est imposée. |
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
 | Zone centrée | La zone de lecture est un rectangle centré (15–85 % de la largeur par défaut) : le texte des côtés (logos, heure, décor) est ignoré. Poignées jaunes sur les 4 côtés. |
 | Vue 16:9 | Par défaut, l'aperçu est au format des télés (16:9), téléphone debout comme couché. Debout, il montre la bande centrale de l'image ; seul le texte visible est lu. Désactivable dans les réglages (vue 9:16). |

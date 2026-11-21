@@ -164,7 +164,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, i) {
                 final e = items[i];
-                final lang = languageFor(e.lang).label;
+                final lang = languageName(e.lang);
                 return Semantics(
                   button: true,
                   label: 'À ${_time(e.time)}, en $lang : ${e.text}. Touchez pour réentendre.',
@@ -177,7 +177,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       [
                         '${_time(e.time)} · $lang',
                         if (e.original.isNotEmpty)
-                          'Original (${languageFor(e.originalLang).label}) : ${e.original}',
+                          'Original (${languageName(e.originalLang)}) : ${e.original}',
                       ].join('\n'),
                     ),
                     trailing: IconButton(
