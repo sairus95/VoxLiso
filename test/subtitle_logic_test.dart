@@ -5,6 +5,7 @@ import 'package:voxliso/languages.dart';
 import 'dart:ui' show Rect;
 
 import 'package:voxliso/rate_pacer.dart';
+import 'package:voxliso/reading_vote.dart';
 import 'package:voxliso/sentence_joiner.dart';
 import 'package:voxliso/spell_fixer.dart';
 import 'package:voxliso/static_filter.dart';
@@ -388,6 +389,102 @@ void main() {
       expect(p.next(0), closeTo(1.2, 1e-9));
       p.reset();
       expect(p.factor, 1.0);
+    });
+  });
+
+  group('ReadingVote', () {
+    final dict = WordList.fromWords([
+      'je', 'pense', 'que', 'tu', 'as', 'raison', 'il', 'fait', 'beau', 'la', 'maison',
+      'à', 'rentre', 'école', 'vu', 'ai', 'le', 'chat', 'est', 'sur', 'table', 'viens', 'non',
+    ]);
+    test('garde le vrai mot quand deux lectures diffèrent', () {
+      expect(
+        ReadingVote.combine([
+          const OcrReading('Je pense que tu as raisori.'),
+          const OcrReading('Je pense gue tu as raison.'),
+        ], dict: dict),
+        'Je pense que tu as raison.',
+      );
+    });
+    test('la majorité l\'emporte', () {
+      expect(
+        ReadingVote.combine([
+          const OcrReading('Le chat est sur la table'),
+          const OcrReading('Le chat est sur la tabie'),
+          const OcrReading('Le chat est sur la table'),
+        ], dict: dict),
+        'Le chat est sur la table',
+      );
+    });
+    test('retire un mot vu dans une seule lecture sur trois', () {
+      expect(
+        ReadingVote.combine([
+          const OcrReading('Il fait beau'),
+          const OcrReading('Il fait beau x'),
+          const OcrReading('Il fait beau'),
+        ], dict: dict),
+        'Il fait beau',
+      );
+    });
+    test('accents : la forme du dictionnaire', () {
+      expect(
+        ReadingVote.combine([
+          const OcrReading("Je l'ai vu à l'ecole"),
+          const OcrReading("Je l'ai vu à l'école"),
+        ], dict: dict),
+        "Je l'ai vu à l'école",
+      );
+    });
+    test('sans dictionnaire : la confiance de ML Kit départage', () {
+      expect(
+        ReadingVote.combine([
+          const OcrReading('Hello Jonh', confidence: {'jonh': 0.4}),
+          const OcrReading('Hello John', confidence: {'john': 0.95}),
+        ]),
+        'Hello John',
+      );
+    });
+    test('garde les répliques et le tiret de début', () {
+      final t = ReadingVote.combine([
+        OcrReading(joinParts(['Tu viens ?', 'Non'], dialogueStart: true)),
+        OcrReading(joinParts(['Tu vlens ?', 'Non'], dialogueStart: true)),
+      ], dict: dict);
+      expect(splitParts(t), ['Tu viens ?', 'Non']);
+      expect(startsWithDialogue(t), isTrue);
+    });
+    test('une seule lecture : inchangée', () {
+      expect(ReadingVote.combine([const OcrReading('Bonjour')], dict: dict), 'Bonjour');
+      expect(ReadingVote.combine(const []), '');
+    });
+
+    test('suivi : lectures en désaccord, une image de plus puis le vote', () {
+      final t = SubtitleTracker(stableFrames: 2)..dictionary = () => dict;
+      expect(t.push('Je pense que tu as raisori.'), isNull);
+      expect(t.push('Je pense gue tu as raison.'), isNull);
+      expect(t.push('Je pense que tu as raison.'), 'Je pense que tu as raison.');
+    });
+    test('suivi : dit le sous-titre même s\'il disparaît pendant qu\'on départage', () {
+      final t = SubtitleTracker(stableFrames: 2)..dictionary = () => dict;
+      expect(t.push('Il fait beau'), isNull);
+      expect(t.push('Il fait bcau'), isNull);
+      expect(t.push(''), 'Il fait beau');
+    });
+    test('suivi : 2e lecture de la même image', () {
+      final t = SubtitleTracker(stableFrames: 1)..dictionary = () => dict;
+      expect(
+        t.push('Je rentre à la rnaison.',
+            alternatives: [const OcrReading('Je rentre à la maison.')]),
+        isNull,
+      );
+      expect(t.push(''), 'Je rentre à la maison.');
+      expect(t.lastWasFull, isTrue);
+    });
+    test('suivi : un nouveau sous-titre fait dire celui qui attendait', () {
+      final t = SubtitleTracker(stableFrames: 2)..dictionary = () => dict;
+      t.push('Il fait beau');
+      expect(t.push('Il fait bcau'), isNull);
+      expect(t.push('Le chat est sur la table'), 'Il fait beau');
+      expect(t.push('Le chat est sur la table'), 'Le chat est sur la table');
     });
   });
 }

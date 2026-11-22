@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 final RegExp _soundTags = RegExp(r'\[[^\]]*\]|\([^)]*\)');
-final RegExp _junkChars = RegExp(r'[♪♫#*|_~<>{}\\]');
+final RegExp _junkChars = RegExp(r'[♪♫#*|¦_~<>{}\\]');
 final RegExp _dialogueDash = RegExp(r'^[-–—]+\s*');
 final RegExp _inlineDialogue = RegExp(r'(?<=[.!?…])\s+[-–—]\s+');
 final RegExp _letter = RegExp(r'\p{L}', unicode: true);
