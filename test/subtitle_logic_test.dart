@@ -2,7 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voxliso/history.dart';
 import 'package:voxliso/language_detector.dart';
 import 'package:voxliso/languages.dart';
+import 'package:voxliso/static_filter.dart';
 import 'package:voxliso/subtitle_tracker.dart';
+import 'package:voxliso/updater.dart';
 import 'package:voxliso/text_tools.dart';
 import 'package:voxliso/voices.dart';
 
@@ -204,6 +206,67 @@ void main() {
     test('données abîmées : historique vide, sans plantage', () {
       final h = SubtitleHistory()..decode('pas du json');
       expect(h.entries, isEmpty);
+    });
+  });
+
+  group('StaticTextFilter', () {
+    test('ignore un texte resté identique plus de 20 s', () {
+      var now = DateTime(2026, 11, 22, 20, 0, 0);
+      final f = StaticTextFilter(clock: () => now);
+      for (var i = 0; i < 25; i++) {
+        final fixed = f.update(['FRANCE 2', 'Bonjour à tous']);
+        if (i < 20) expect(fixed, isEmpty, reason: 'seconde $i');
+        now = now.add(const Duration(seconds: 1));
+      }
+      // Les sous-titres changent : seule la ligne fixe est ignorée.
+      expect(f.update(['FRANCE 2', 'Une nouvelle phrase']), {0});
+    });
+
+    test('un sous-titre affiché quelques secondes n\'est jamais fixe', () {
+      var now = DateTime(2026, 11, 22, 20, 0, 0);
+      final f = StaticTextFilter(clock: () => now);
+      for (var i = 0; i < 8; i++) {
+        expect(f.update(['Je reviens dans cinq minutes.']), isEmpty);
+        now = now.add(const Duration(seconds: 1));
+      }
+    });
+
+    test('tolère une lecture ratée, pas une longue absence', () {
+      var now = DateTime(2026, 11, 22, 20, 0, 0);
+      final f = StaticTextFilter(clock: () => now);
+      for (var i = 0; i < 15; i++) {
+        f.update(['LIVE']);
+        now = now.add(const Duration(seconds: 1));
+      }
+      now = now.add(const Duration(seconds: 2)); // image floue : 2 s sans le texte
+      for (var i = 0; i < 5; i++) {
+        f.update(['LIVE']);
+        now = now.add(const Duration(seconds: 1));
+      }
+      expect(f.update(['LIVE']), {0});
+      now = now.add(const Duration(seconds: 10)); // disparu longtemps : on oublie
+      expect(f.update(['LIVE']), isEmpty);
+    });
+
+    test('petites erreurs de lecture : même texte fixe', () {
+      var now = DateTime(2026, 11, 22, 20, 0, 0);
+      final f = StaticTextFilter(clock: () => now);
+      for (var i = 0; i < 22; i++) {
+        f.update([i.isEven ? 'Le Journal de 20h' : 'Le Journa1 de 20h']);
+        now = now.add(const Duration(seconds: 1));
+      }
+      expect(f.update(['Le Journal de 20h']), {0});
+    });
+  });
+
+  group('Updater', () {
+    test('compare les numéros de version', () {
+      expect(Updater.isNewer('v1.0.27', '1.0.26'), isTrue);
+      expect(Updater.isNewer('v1.0.26', '1.0.26'), isFalse);
+      expect(Updater.isNewer('v1.0.9', '1.0.10'), isFalse);
+      expect(Updater.isNewer('v1.1.0', '1.0.99'), isTrue);
+      expect(Updater.isNewer('v1.0.27', 'dev'), isFalse);
+      expect(Updater.parseVersion('v2.3.4'), [2, 3, 4]);
     });
   });
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show File, Platform;
 import 'dart:math' as math;
 
@@ -17,10 +18,12 @@ import 'screen_capture.dart';
 import 'settings.dart';
 import 'settings_sheet.dart';
 import 'speech_service.dart';
+import 'static_filter.dart';
 import 'subtitle_tracker.dart';
 import 'system_bridge.dart';
 import 'text_tools.dart';
 import 'translator.dart';
+import 'updater.dart';
 import 'tutorial.dart';
 import 'version.dart';
 import 'voices.dart';
@@ -78,6 +81,17 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   final SubtitleHistory _history = SubtitleHistory();
 
+  /// Texte fixe (logo, heure, menu) : ignoré après 20 s sans changement.
+  final StaticTextFilter _staticFilter = StaticTextFilter();
+
+  /// Écran noir pendant la lecture.
+  bool _dimmed = false;
+  Timer? _dimTimer;
+  static const Duration _dimDelay = Duration(seconds: 8);
+
+  /// Nouvelle version disponible sur GitHub.
+  UpdateInfo? _update;
+
   // Lecture de l'écran du téléphone (Android).
   final ScreenCapture _screen = ScreenCapture();
   List<DetectedBox> _screenBoxes = const [];
@@ -129,6 +143,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (s.ttsEngine.isNotEmpty) await _speech.setEngine(s.ttsEngine);
     _catalog.load(await _speech.rawVoices());
     _translator.refresh();
+    _autoCheckUpdate();
     await _applyVoice();
     await _initCamera();
   }
@@ -315,6 +330,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _undim();
     // Mode écran : la lecture continue pendant que l'on regarde la vidéo.
     if (s.screenSource) return;
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
@@ -414,8 +430,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           (r.right / w - crop.ox) / crop.vw,
           (r.bottom / h - crop.oy) / crop.vh,
         );
+    // Texte fixe (logo, heure, menu) : ignoré.
+    final fixedIdx =
+        s.ignoreStatic ? _staticFilter.update([for (final l in lines) l.text]) : const <int>{};
+    final fixed = {for (final i in fixedIdx) lines[i]};
+    if (fixed.isNotEmpty) lines.removeWhere(fixed.contains);
     final boxes = [
-      for (final l in all) DetectedBox(frac(l.boundingBox), lines.contains(l)),
+      for (final l in all)
+        DetectedBox(frac(l.boundingBox), lines.contains(l), fixed: fixed.contains(l)),
     ];
     final rawText = lines.map((l) => l.text).join(' / ');
     setState(() {
@@ -424,6 +446,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _diag = 'v$kAppVersion · ${_landscape ? 'paysage' : 'portrait'} · '
           '${s.photoMode ? 'Mode photo · ' : ''}$info · ${w.toInt()}×${h.toInt()} · ${ms}ms\n'
           'Texte trouvé : ${all.length} ligne(s), ${lines.length} dans la zone'
+          '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
     });
 
@@ -466,13 +489,21 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       }
       return dy < 0 ? -1 : 1;
     });
+    final fixedIdx =
+        s.ignoreStatic ? _staticFilter.update([for (final l in inZone) l.text]) : const <int>{};
+    final fixed = {for (final i in fixedIdx) inZone[i]};
+    if (fixed.isNotEmpty) inZone.removeWhere(fixed.contains);
     final raw = inZone.map((l) => l.text).join(' / ');
     if (mounted) {
       setState(() {
-        _screenBoxes = [for (final l in f.lines) DetectedBox(l.rect, inZone.contains(l))];
+        _screenBoxes = [
+          for (final l in f.lines)
+            DetectedBox(l.rect, inZone.contains(l), fixed: fixed.contains(l)),
+        ];
         _screenBoxesLandscape = f.landscape;
         _diag = 'Écran du téléphone (${f.landscape ? 'paysage' : 'portrait'})\n'
             'Texte trouvé : ${f.lines.length} ligne(s), ${inZone.length} dans la zone'
+            '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
             '${raw.isEmpty ? '' : '\n« $raw »'}';
       });
     }
@@ -484,6 +515,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (_reading) await _stopReadingAsync();
     s.source = source;
     _tracker.reset();
+    _staticFilter.reset();
     if (source == 'screen') {
       await _releaseCamera();
     } else {
@@ -733,6 +765,161 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
   }
 
+  // ------------------------------------------------------- écran noir
+
+  /// Programme l'écran noir après quelques secondes sans toucher l'écran.
+  void _scheduleDim() {
+    _dimTimer?.cancel();
+    if (!_reading || !s.blackScreen || s.screenSource) return;
+    _dimTimer = Timer(_dimDelay, () {
+      if (!mounted || _closed || !_reading || !s.blackScreen) return;
+      setState(() => _dimmed = true);
+      SystemBridge.setBrightness(0.01);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    });
+  }
+
+  /// Rallume l'écran (toucher), puis le réassombrit plus tard.
+  void _wake() {
+    if (_dimmed) {
+      setState(() => _dimmed = false);
+      SystemBridge.setBrightness(-1);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+    _scheduleDim();
+  }
+
+  /// Fin de l'écran noir (lecture arrêtée, application en arrière-plan).
+  void _undim() {
+    _dimTimer?.cancel();
+    if (!_dimmed) return;
+    _dimmed = false;
+    SystemBridge.setBrightness(-1);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    if (mounted && !_closed) setState(() {});
+  }
+
+  Widget _buildDimmed() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Semantics(
+        button: true,
+        label: 'Lecture des sous-titres en cours. Touchez pour rallumer l\'écran.',
+        excludeSemantics: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _wake,
+          child: const SizedBox.expand(
+            child: Center(
+              child: Text(
+                'VoxLiso lit les sous-titres\nTouchez l\'écran pour l\'afficher',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF2B2B2B), fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------- mises à jour
+
+  /// Au démarrage : au plus une vérification toutes les 6 heures.
+  Future<void> _autoCheckUpdate() async {
+    if (!Updater.supported) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - s.lastUpdateCheck < const Duration(hours: 6).inMilliseconds) return;
+    try {
+      final info = await Updater.check();
+      s.lastUpdateCheck = now;
+      if (info != null && info.version != s.skippedVersion && mounted) {
+        setState(() => _update = info);
+      }
+    } catch (_) {}
+  }
+
+  /// Bouton « Rechercher une mise à jour » des réglages.
+  Future<String> _manualCheckUpdate() async {
+    if (!Updater.supported) return 'Mises à jour automatiques indisponibles sur cet appareil.';
+    try {
+      final info = await Updater.check();
+      s.lastUpdateCheck = DateTime.now().millisecondsSinceEpoch;
+      if (info == null) return 'VoxLiso est à jour (version $kAppVersion).';
+      s.skippedVersion = '';
+      if (mounted) setState(() => _update = info);
+      return 'Version ${info.version} disponible : touchez « Mettre à jour » en haut de l\'écran.';
+    } catch (_) {
+      return 'Impossible de joindre GitHub : vérifiez la connexion internet.';
+    }
+  }
+
+  Future<void> _runUpdate(UpdateInfo info) async {
+    final progress = ValueNotifier<double?>(null);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text('Mise à jour vers ${info.version}'),
+        content: ValueListenableBuilder<double?>(
+          valueListenable: progress,
+          builder: (context, p, child) => Column(mainAxisSize: MainAxisSize.min, children: [
+            LinearProgressIndicator(value: p),
+            const SizedBox(height: 12),
+            Text(p == null ? 'Téléchargement…' : 'Téléchargement : ${(p * 100).round()} %'),
+          ]),
+        ),
+      ),
+    );
+    String? path;
+    try {
+      path = await Updater.download(info, (p) => progress.value = p);
+    } catch (_) {}
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    final messenger = ScaffoldMessenger.of(context);
+    final browser = SnackBarAction(
+      label: 'Navigateur',
+      onPressed: () => SystemBridge.openUrl(info.url),
+    );
+    if (path == null) {
+      messenger.showSnackBar(SnackBar(
+        content: const Text('Téléchargement impossible : vérifiez la connexion internet.'),
+        action: browser,
+      ));
+      return;
+    }
+    final ok = await Updater.install(path);
+    if (!mounted) return;
+    setState(() => _update = null);
+    messenger.showSnackBar(SnackBar(
+      duration: const Duration(seconds: 8),
+      content: Text(ok
+          ? 'Android va demander de confirmer la mise à jour. La première fois, '
+              'autorisez VoxLiso à installer des applications, puis revenez.'
+          : 'Installation impossible depuis VoxLiso : ouvrez le fichier dans le navigateur.'),
+      action: ok ? null : browser,
+    ));
+  }
+
+  Widget _buildUpdateBanner(UpdateInfo info) => MaterialBanner(
+        leading: const Icon(Icons.system_update),
+        content: Text('VoxLiso ${info.version} est disponible.'),
+        actions: [
+          TextButton(
+            onPressed: () => setState(() {
+              s.skippedVersion = info.version;
+              _update = null;
+            }),
+            child: const Text('Plus tard'),
+          ),
+          FilledButton(
+            onPressed: () => _runUpdate(info),
+            child: const Text('Mettre à jour'),
+          ),
+        ],
+      );
+
   /// Redit une phrase (historique ou bouton « Répéter »).
   void _replay(HistoryEntry e) {
     _speech.say(
@@ -866,6 +1053,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       WakelockPlus.enable();
       setState(() => _reading = true);
       _announce('Lecture démarrée');
+      _scheduleDim();
     }
   }
 
@@ -875,6 +1063,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   Future<void> _stopReadingAsync() async {
     if (!_reading) return;
+    _undim();
     if (mounted && !_closed) setState(() => _reading = false);
     _speech.stop();
     WakelockPlus.disable();
@@ -934,6 +1123,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           pitch: pitch,
         ),
         onResetZone: () => setState(s.resetZones),
+        onCheckUpdate: _manualCheckUpdate,
         onTutorial: () {
           Navigator.of(context).pop();
           _openTutorial();
@@ -956,6 +1146,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _langDetector.close();
     _translator.close();
     _screen.dispose();
+    _dimTimer?.cancel();
+    if (_dimmed) {
+      SystemBridge.setBrightness(-1);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     _speech.stop();
     WakelockPlus.disable();
     super.dispose();
@@ -968,6 +1163,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final theme = Theme.of(context);
     final landscapeUi = MediaQuery.orientationOf(context) == Orientation.landscape;
     _uiLandscape = landscapeUi;
+    if (_dimmed) return _buildDimmed();
     final banner = _voiceMissing
         ? MaterialBanner(
             content: Text(
@@ -978,7 +1174,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           )
         : null;
 
-    return Scaffold(
+    // Tout toucher repousse l'écran noir.
+    return Listener(
+      onPointerDown: (_) => _scheduleDim(),
+      child: Scaffold(
       appBar: AppBar(
         toolbarHeight: landscapeUi ? 44 : null,
         title: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1011,7 +1210,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         ],
       ),
       body: SafeArea(
-        child: landscapeUi
+        child: Column(children: [
+          if (_update != null) _buildUpdateBanner(_update!),
+          Expanded(
+            child: landscapeUi
             // Paysage : aperçu à gauche, commandes à droite.
             ? Row(children: [
                 Expanded(child: Center(child: _buildPreview())),
@@ -1043,6 +1245,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                   ),
                 ),
               ]),
+          ),
+        ]),
+      ),
       ),
     );
   }

@@ -6,9 +6,12 @@ import 'logo.dart';
 
 /// Ligne de texte trouvée par l'OCR (en fractions 0..1 de l'image).
 class DetectedBox {
-  const DetectedBox(this.rect, this.inZone);
+  const DetectedBox(this.rect, this.inZone, {this.fixed = false});
   final Rect rect;
   final bool inZone;
+
+  /// Texte fixe (logo, heure…) ignoré : encadré en gris.
+  final bool fixed;
 }
 
 /// Zone réglable posée sur l'aperçu : seul le texte à l'intérieur est lu.
@@ -227,6 +230,10 @@ class _RoiPainter extends CustomPainter {
       ..color = Colors.orangeAccent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
+    final fixedPaint = Paint()
+      ..color = Colors.grey
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
     for (final d in boxes) {
       final b = d.rect;
       canvas.drawRect(
@@ -236,7 +243,7 @@ class _RoiPainter extends CustomPainter {
           b.right * size.width,
           b.bottom * size.height,
         ),
-        d.inZone ? inPaint : outPaint,
+        d.fixed ? fixedPaint : (d.inZone ? inPaint : outPaint),
       );
     }
   }

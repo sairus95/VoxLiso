@@ -32,6 +32,9 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 |---|---|
 | Langue (Auto / FR / DE / ES / IT / EN / PT) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Les sous-titres dans une **autre langue** (néerlandais, polonais, roumain…) sont **traduits automatiquement** (en français par défaut ; langue téléchargée en Wi-Fi au premier besoin, ou DeepL). Sinon, la langue choisie est imposée. |
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
+| Texte fixe ignoré | Un texte qui ne change pas pendant plus de 20 s (logo de chaîne, heure, menu) n'est pas lu ; il est encadré en gris. |
+| Écran noir | Quelques secondes après « Lire » (caméra), l'écran passe au noir (luminosité au minimum sur Android) ; le toucher le rallume. |
+| Mises à jour | Android : VoxLiso vérifie les nouvelles versions sur GitHub (au plus toutes les 6 h) et propose « Mettre à jour » : téléchargement puis installation après confirmation. Bouton « Rechercher une mise à jour » dans les réglages. |
 | Zone centrée | La zone de lecture est un rectangle centré (15–85 % de la largeur par défaut) : le texte des côtés (logos, heure, décor) est ignoré. Poignées jaunes sur les 4 côtés. |
 | Vue 16:9 | Par défaut, l'aperçu est au format des télés (16:9), téléphone debout comme couché. Debout, il montre la bande centrale de l'image ; seul le texte visible est lu. Désactivable dans les réglages (vue 9:16). |
 | Zoom | Pour « rapprocher » une télé éloignée. |

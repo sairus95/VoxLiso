@@ -166,6 +166,20 @@ class AppSettings {
   String get deeplKey => _prefs.getString('deeplKey') ?? '';
   set deeplKey(String v) => _prefs.setString('deeplKey', v.trim());
 
+  /// Ignorer le texte resté identique plus de 20 s (logo, heure, menu).
+  bool get ignoreStatic => _prefs.getBool('ignoreStatic') ?? true;
+  set ignoreStatic(bool v) => _prefs.setBool('ignoreStatic', v);
+
+  /// Écran noir pendant la lecture (caméra) : toucher pour le rallumer.
+  bool get blackScreen => _prefs.getBool('blackScreen') ?? true;
+  set blackScreen(bool v) => _prefs.setBool('blackScreen', v);
+
+  /// Mises à jour : dernière vérification (ms) et version écartée (« Plus tard »).
+  int get lastUpdateCheck => _prefs.getInt('lastUpdateCheck') ?? 0;
+  set lastUpdateCheck(int v) => _prefs.setInt('lastUpdateCheck', v);
+  String get skippedVersion => _prefs.getString('skippedVersion') ?? '';
+  set skippedVersion(String v) => _prefs.setString('skippedVersion', v);
+
   /// Zoom de la caméra.
   double get zoom => _prefs.getDouble('zoom') ?? 1.0;
   set zoom(double v) => _prefs.setDouble('zoom', v);

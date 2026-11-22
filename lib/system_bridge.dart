@@ -40,6 +40,34 @@ class SystemBridge {
     }
   }
 
+  /// Luminosité de l'écran pour VoxLiso seulement (0 à 1) ; -1 = celle du téléphone.
+  static Future<void> setBrightness(double value) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod<bool>('setBrightness', {'value': value});
+    } catch (_) {}
+  }
+
+  /// Installe un APK téléchargé (mise à jour) ; Android demande confirmation.
+  static Future<bool> installApk(String path) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _channel.invokeMethod<bool>('installApk', {'path': path}) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Ouvre un lien dans le navigateur.
+  static Future<bool> openUrl(String url) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _channel.invokeMethod<bool>('openUrl', {'url': url}) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<bool> openTtsSettings() async {
     if (!Platform.isAndroid) return false;
     try {

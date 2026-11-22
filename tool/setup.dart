@@ -141,6 +141,7 @@ bool _screenCapture(File gradle) {
   var xml = manifest.readAsStringSync();
   for (final perm in [
     'android.permission.INTERNET',
+    'android.permission.REQUEST_INSTALL_PACKAGES',
     'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
     'android.permission.POST_NOTIFICATIONS',
