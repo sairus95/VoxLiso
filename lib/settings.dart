@@ -180,6 +180,21 @@ class AppSettings {
   /// Clé DeepL à utiliser : celle saisie dans les réglages, sinon la clé intégrée.
   String get effectiveDeeplKey => deeplKey.isNotEmpty ? deeplKey : builtInDeeplKey;
 
+  /// Microsoft Azure Translator : clé et région saisies dans les réglages.
+  String get azureKey => _prefs.getString('azureKey') ?? '';
+  set azureKey(String v) => _prefs.setString('azureKey', v.trim());
+  String get azureRegion => _prefs.getString('azureRegion') ?? '';
+  set azureRegion(String v) => _prefs.setString('azureRegion', v.trim());
+
+  /// Clé Azure intégrée à l'APK GitHub (jamais dans la version boutique).
+  static String get builtInAzureKey =>
+      const bool.fromEnvironment('STORE_BUILD') ? '' : kBuiltInAzureKey.trim();
+
+  /// Clé et région Azure à utiliser : celles des réglages, sinon celles intégrées.
+  String get effectiveAzureKey => azureKey.isNotEmpty ? azureKey : builtInAzureKey;
+  String get effectiveAzureRegion =>
+      azureKey.isNotEmpty ? azureRegion : (builtInAzureKey.isEmpty ? '' : kBuiltInAzureRegion.trim());
+
   /// Ignorer le texte resté identique plus de 20 s (logo, heure, menu).
   bool get ignoreStatic => _prefs.getBool('ignoreStatic') ?? true;
   set ignoreStatic(bool v) => _prefs.setBool('ignoreStatic', v);
