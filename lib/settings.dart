@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'voices.dart';
+import 'version.dart';
 
 /// Réglages de l'application, conservés entre deux utilisations.
 class AppSettings {
@@ -170,6 +171,29 @@ class AppSettings {
   /// Clé de l'API DeepL (facultative) : traduction en ligne de meilleure qualité.
   String get deeplKey => _prefs.getString('deeplKey') ?? '';
   set deeplKey(String v) => _prefs.setString('deeplKey', v.trim());
+
+  /// Clé intégrée à l'APK GitHub (secret de compilation), sauf version boutique :
+  /// celle-ci partagerait le quota DeepL entre tous les utilisateurs.
+  static String get builtInDeeplKey =>
+      const bool.fromEnvironment('STORE_BUILD') ? '' : kBuiltInDeeplKey.trim();
+
+  /// Clé DeepL à utiliser : celle saisie dans les réglages, sinon la clé intégrée.
+  String get effectiveDeeplKey => deeplKey.isNotEmpty ? deeplKey : builtInDeeplKey;
+
+  /// Microsoft Azure Translator : clé et région saisies dans les réglages.
+  String get azureKey => _prefs.getString('azureKey') ?? '';
+  set azureKey(String v) => _prefs.setString('azureKey', v.trim());
+  String get azureRegion => _prefs.getString('azureRegion') ?? '';
+  set azureRegion(String v) => _prefs.setString('azureRegion', v.trim());
+
+  /// Clé Azure intégrée à l'APK GitHub (jamais dans la version boutique).
+  static String get builtInAzureKey =>
+      const bool.fromEnvironment('STORE_BUILD') ? '' : kBuiltInAzureKey.trim();
+
+  /// Clé et région Azure à utiliser : celles des réglages, sinon celles intégrées.
+  String get effectiveAzureKey => azureKey.isNotEmpty ? azureKey : builtInAzureKey;
+  String get effectiveAzureRegion =>
+      azureKey.isNotEmpty ? azureRegion : (builtInAzureKey.isEmpty ? '' : kBuiltInAzureRegion.trim());
 
   /// Ignorer le texte resté identique plus de 20 s (logo, heure, menu).
   bool get ignoreStatic => _prefs.getBool('ignoreStatic') ?? true;

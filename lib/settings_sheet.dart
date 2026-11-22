@@ -66,8 +66,13 @@ class SettingsSheet extends StatefulWidget {
 class _SettingsSheetState extends State<SettingsSheet> {
   AppSettings get s => widget.settings;
   late final TextEditingController _deepl = TextEditingController(text: widget.settings.deeplKey);
+  late final TextEditingController _azureKey = TextEditingController(text: widget.settings.azureKey);
+  late final TextEditingController _azureRegion =
+      TextEditingController(text: widget.settings.azureRegion);
   bool _testing = false;
   String? _testResult;
+  bool _testingAzure = false;
+  String? _azureResult;
   bool _checkingUpdate = false;
   String? _updateResult;
 
@@ -75,6 +80,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
   void dispose() {
     Premium.instance.removeListener(_onPremium);
     _deepl.dispose();
+    _azureKey.dispose();
+    _azureRegion.dispose();
     super.dispose();
   }
 
@@ -84,19 +91,44 @@ class _SettingsSheetState extends State<SettingsSheet> {
 
   Future<void> _testDeepl() async {
     s.deeplKey = _deepl.text;
-    widget.translator.deeplKey = s.deeplKey;
+    widget.translator.deeplKey = s.effectiveDeeplKey;
     setState(() {
       _testing = true;
       _testResult = null;
     });
-    final r = await widget.translator.translateAll(
-        ['Wo ist der Bahnhof, bitte?'], 'de', s.translateTo.isEmpty ? 'fr' : s.translateTo);
+    final r = await widget.translator
+        .testOnline('DeepL', s.translateTo.isEmpty ? 'fr' : s.translateTo);
     if (!mounted) return;
     setState(() {
       _testing = false;
-      _testResult = r != null && r.engine == 'DeepL'
-          ? 'DeepL fonctionne : « ${r.texts.first} »'
+      _testResult = r != null
+          ? 'DeepL fonctionne : « $r »'
           : (widget.translator.deeplError ?? 'DeepL ne répond pas.');
+    });
+  }
+
+  void _applyAzure() {
+    s.azureKey = _azureKey.text;
+    s.azureRegion = _azureRegion.text;
+    widget.translator
+      ..azureKey = s.effectiveAzureKey
+      ..azureRegion = s.effectiveAzureRegion;
+  }
+
+  Future<void> _testAzure() async {
+    _applyAzure();
+    setState(() {
+      _testingAzure = true;
+      _azureResult = null;
+    });
+    final r = await widget.translator
+        .testOnline('Azure', s.translateTo.isEmpty ? 'fr' : s.translateTo);
+    if (!mounted) return;
+    setState(() {
+      _testingAzure = false;
+      _azureResult = r != null
+          ? 'Azure fonctionne : « $r »'
+          : (widget.translator.azureError ?? 'Azure ne répond pas.');
     });
   }
   late String _voiceLang = widget.voice.code;
@@ -505,14 +537,93 @@ class _SettingsSheetState extends State<SettingsSheet> {
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
+        Text('Traduction en ligne gratuite chaque mois : Microsoft Azure (facultatif)',
+            style: theme.textTheme.titleSmall),
+        const SizedBox(height: 4),
+        Text(
+          "Avec une clé Microsoft Azure Translator (palier gratuit « F0 » : 2 millions de "
+          "caractères par mois, une trentaine de films, renouvelés chaque mois), la "
+          "traduction se fait en ligne, nettement mieux que hors ligne. À créer sur "
+          "portal.azure.com : ressource « Translator », palier F0, région « Global ». "
+          "Azure passe en premier ; si son quota du mois est atteint, DeepL puis la "
+          "traduction hors ligne prennent le relais. Les sous-titres sont alors envoyés à Microsoft.",
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _azureKey,
+          obscureText: true,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: InputDecoration(
+            labelText: 'Clé Azure',
+            border: const OutlineInputBorder(),
+            helperText: AppSettings.builtInAzureKey.isNotEmpty && _azureKey.text.trim().isEmpty
+                ? 'Clé intégrée à l\'application utilisée. Collez une autre clé pour la remplacer.'
+                : null,
+            helperMaxLines: 2,
+          ),
+          onChanged: (v) => setState(() {
+            _applyAzure();
+            _azureResult = null;
+          }),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _azureRegion,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: const InputDecoration(
+            labelText: 'Région Azure',
+            hintText: 'global, westeurope, francecentral…',
+            helperText: 'Laissez vide pour une ressource « Global ».',
+            border: OutlineInputBorder(),
+          ),
+          onChanged: (v) => setState(() {
+            _applyAzure();
+            _azureResult = null;
+          }),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          OutlinedButton.icon(
+            onPressed: _testingAzure ||
+                    (_azureKey.text.trim().isEmpty && AppSettings.builtInAzureKey.isEmpty)
+                ? null
+                : _testAzure,
+            icon: _testingAzure
+                ? const SizedBox(
+                    width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.check),
+            label: const Text('Tester Azure'),
+          ),
+          const SizedBox(width: 8),
+          if (_azureKey.text.isNotEmpty || _azureRegion.text.isNotEmpty)
+            TextButton(
+              onPressed: () => setState(() {
+                _azureKey.clear();
+                _azureRegion.clear();
+                _applyAzure();
+                _azureResult = null;
+              }),
+              child: const Text('Effacer'),
+            ),
+        ]),
+        if (_azureResult != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(_azureResult!, style: theme.textTheme.bodySmall),
+          ),
+        const SizedBox(height: 16),
         Text('Meilleure qualité avec DeepL (facultatif)', style: theme.textTheme.titleSmall),
         const SizedBox(height: 4),
         Text(
           "La traduction hors ligne est parfois approximative. Avec une clé DeepL "
-          "gratuite (« DeepL API Free », 500 000 caractères par mois, à créer sur "
-          "deepl.com/pro-api), la traduction se fait en ligne, avec une bien meilleure "
-          "qualité. Les sous-titres sont alors envoyés à DeepL. Sans internet, VoxLiso "
-          "revient tout seul à la traduction hors ligne.",
+          "(formule gratuite « API Developer » sur deepl.com/pro-api : 1 million de "
+          "caractères au total, une quinzaine de films), la traduction se fait en ligne, "
+          "avec une bien meilleure qualité. Les sous-titres sont alors envoyés à DeepL. "
+          "Une fois le quota épuisé, ou sans internet, VoxLiso revient tout seul à la "
+          "traduction hors ligne.",
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
@@ -521,21 +632,28 @@ class _SettingsSheetState extends State<SettingsSheet> {
           obscureText: true,
           autocorrect: false,
           enableSuggestions: false,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Clé DeepL',
             hintText: 'xxxxxxxx-xxxx-…:fx',
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
+            helperText: AppSettings.builtInDeeplKey.isNotEmpty && _deepl.text.trim().isEmpty
+                ? 'Clé intégrée à l\'application utilisée. Collez une autre clé pour la remplacer.'
+                : null,
+            helperMaxLines: 2,
           ),
           onChanged: (v) => setState(() {
             s.deeplKey = v;
-            widget.translator.deeplKey = s.deeplKey;
+            widget.translator.deeplKey = s.effectiveDeeplKey;
             _testResult = null;
           }),
         ),
         const SizedBox(height: 8),
         Row(children: [
           OutlinedButton.icon(
-            onPressed: _testing || _deepl.text.trim().isEmpty ? null : _testDeepl,
+            onPressed: _testing ||
+                    (_deepl.text.trim().isEmpty && AppSettings.builtInDeeplKey.isEmpty)
+                ? null
+                : _testDeepl,
             icon: _testing
                 ? const SizedBox(
                     width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -548,7 +666,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
               onPressed: () => setState(() {
                 _deepl.clear();
                 s.deeplKey = '';
-                widget.translator.deeplKey = '';
+                widget.translator.deeplKey = s.effectiveDeeplKey;
                 _testResult = null;
               }),
               child: const Text('Effacer'),

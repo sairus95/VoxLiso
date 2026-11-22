@@ -11,16 +11,26 @@ class TranslationResult {
   TranslationResult(this.texts, this.engine);
   final List<String> texts;
 
-  /// « DeepL » ou « hors ligne ».
+  /// « Azure », « DeepL » ou « hors ligne ».
   final String engine;
 }
 
-/// Traduction des sous-titres.
-///  - Avec une clé DeepL (facultative) : en ligne, meilleure qualité.
-///  - Sinon, ou sans internet : sur le téléphone (ML Kit), une fois les langues
-///    téléchargées (environ 30 Mo par langue, une seule fois).
+/// Traduction des sous-titres, dans cet ordre :
+///  - Microsoft Azure Translator, avec une clé (facultative) : en ligne,
+///    2 millions de caractères gratuits renouvelés chaque mois ;
+///  - DeepL, avec une clé (facultative) : en ligne, très bonne qualité ;
+///  - sinon, sans internet ou si les quotas sont épuisés : sur le téléphone
+///    (ML Kit), une fois les langues téléchargées (environ 30 Mo par langue).
 class SubtitleTranslator {
-  /// Clé de l'API DeepL (vide = traduction hors ligne seulement).
+  /// Clé et région de Microsoft Azure Translator (clé vide = pas d'Azure ;
+  /// région vide ou « global » pour une ressource globale).
+  String azureKey = '';
+  String azureRegion = '';
+
+  /// Dernière erreur Azure, pour l'afficher dans les réglages.
+  String? azureError;
+
+  /// Clé de l'API DeepL (vide = pas de DeepL).
   String deeplKey = '';
 
   /// Dernière erreur DeepL, pour l'afficher dans les réglages.
@@ -124,6 +134,10 @@ class SubtitleTranslator {
   Future<TranslationResult?> translateAll(List<String> texts, String from, String to) async {
     if (from == to) return TranslationResult(texts, '');
     final prepared = [for (final t in texts) prepareForTranslation(t)];
+    if (azureKey.trim().isNotEmpty) {
+      final online = await _azure(prepared, from, to);
+      if (online != null) return TranslationResult(online, 'Azure');
+    }
     if (deeplKey.trim().isNotEmpty) {
       final online = await _deepl(prepared, from, to);
       if (online != null) return TranslationResult(online, 'DeepL');
@@ -180,6 +194,89 @@ class SubtitleTranslator {
       return null;
     } catch (_) {
       deeplError = 'Pas de connexion à DeepL : traduction hors ligne.';
+      return null;
+    }
+  }
+
+  /// Essaie un moteur en ligne seul (« Azure » ou « DeepL ») sur une phrase
+  /// d'exemple, pour le bouton « Tester » des réglages. Renvoie la traduction,
+  /// ou null (l'erreur est dans [azureError] / [deeplError]).
+  Future<String?> testOnline(String engine, String to) async {
+    const sample = ['Wo ist der Bahnhof, bitte?'];
+    final r = engine == 'Azure' ? await _azure(sample, 'de', to) : await _deepl(sample, 'de', to);
+    return r?.first;
+  }
+
+  /// Code de langue pour Azure : norvégien « nb », tagalog « fil », et
+  /// portugais du Portugal (« pt-pt ») en traduction, comme la voix pt-PT.
+  static String azureLang(String code, {bool target = false}) => switch (code) {
+        'no' => 'nb',
+        'tl' => 'fil',
+        'pt' when target => 'pt-pt',
+        _ => code,
+      };
+
+  /// Lit la réponse d'Azure : `[{"translations":[{"text":…,"to":…}]}, …]`.
+  static List<String>? parseAzure(String body, int expected) {
+    try {
+      final list = jsonDecode(body) as List;
+      final out = [
+        for (final item in list) (((item as Map)['translations'] as List).first as Map)['text'].toString(),
+      ];
+      return out.length == expected ? out : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Message clair pour une erreur d'Azure (code HTTP et code détaillé).
+  static String azureErrorMessage(int status, String body) {
+    int? code;
+    try {
+      code = (((jsonDecode(body) as Map)['error'] as Map)['code'] as num?)?.toInt();
+    } catch (_) {}
+    if (status == 401) return 'Clé Azure refusée : vérifiez la clé et la région.';
+    if (status == 403 && code == 403001) {
+      return 'Quota gratuit Azure du mois atteint : autre traduction en attendant.';
+    }
+    if (status == 429) return 'Azure est surchargé : autre traduction pour ce sous-titre.';
+    if (status == 400 && (code == 400035 || code == 400036)) {
+      return 'Azure ne traduit pas cette langue : autre traduction.';
+    }
+    return 'Azure a répondu $status${code != null ? ' ($code)' : ''}.';
+  }
+
+  Future<List<String>?> _azure(List<String> texts, String from, String to) async {
+    final key = azureKey.trim();
+    final region = azureRegion.trim().toLowerCase().replaceAll(' ', '');
+    try {
+      final req = await _http.postUrl(Uri.https('api.cognitive.microsofttranslator.com', '/translate', {
+        'api-version': '3.0',
+        'from': azureLang(from),
+        'to': azureLang(to, target: true),
+      }));
+      req.headers
+        ..set('Ocp-Apim-Subscription-Key', key)
+        ..contentType = ContentType.json;
+      // Ressource régionale (westeurope, francecentral…) : la région est obligatoire.
+      if (region.isNotEmpty && region != 'global') {
+        req.headers.set('Ocp-Apim-Subscription-Region', region);
+      }
+      req.write(jsonEncode([for (final t in texts) {'Text': t}]));
+      final res = await req.close().timeout(const Duration(seconds: 5));
+      final body = await res.transform(utf8.decoder).join();
+      if (res.statusCode != 200) {
+        azureError = azureErrorMessage(res.statusCode, body);
+        return null;
+      }
+      final out = parseAzure(body, texts.length);
+      azureError = out == null ? 'Réponse d\'Azure illisible.' : null;
+      return out;
+    } on TimeoutException {
+      azureError = 'Azure ne répond pas : autre traduction.';
+      return null;
+    } catch (_) {
+      azureError = 'Pas de connexion à Azure : autre traduction.';
       return null;
     }
   }

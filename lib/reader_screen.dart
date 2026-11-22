@@ -158,7 +158,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       accept: (code) =>
           kOtherLanguages.containsKey(code) && SubtitleTranslator.canTranslate(code),
     );
-    _translator.deeplKey = s.deeplKey;
+    _translator
+      ..deeplKey = s.effectiveDeeplKey
+      ..azureKey = s.effectiveAzureKey
+      ..azureRegion = s.effectiveAzureRegion;
     _history.decode(s.historyJson);
     Premium.instance.addListener(_onPremium);
     // Lecture de l'écran réservée à VoxLiso Plus.
@@ -969,15 +972,17 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         out = result.texts;
         speakLang = target;
         _translationEngine = result.engine;
-        // DeepL réglé mais indisponible : on le signale, la lecture continue.
-        if (result.engine != 'DeepL' && s.deeplKey.isNotEmpty) {
-          warning = _translator.deeplError;
+        // Azure ou DeepL réglé mais indisponible : on le signale, la lecture continue.
+        if (result.engine == 'hors ligne' &&
+            (s.effectiveAzureKey.isNotEmpty || s.effectiveDeeplKey.isNotEmpty)) {
+          warning = _translator.azureError ?? _translator.deeplError;
         }
       } else if (_translator.autoDownloading.isNotEmpty) {
         warning = 'Téléchargement de ${_translator.autoDownloading.map(languageName).join(' et ')} '
             'pour la traduction (en Wi-Fi). En attendant : lecture dans la langue d\'origine.';
       } else {
-        warning = _translator.deeplError ??
+        warning = _translator.azureError ??
+            _translator.deeplError ??
             'Traduction impossible : téléchargez ${languageName(lang)} et '
                 '${languageName(target)} dans les réglages (section Traduction).';
       }
@@ -1494,7 +1499,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _speech.autoRate = s.autoRate;
     _scheduleDim(); // écran noir activé ou désactivé dans les réglages
     _tracker.stableFrames = s.stableFrames;
-    _translator.deeplKey = s.deeplKey;
+    _translator
+      ..deeplKey = s.effectiveDeeplKey
+      ..azureKey = s.effectiveAzureKey
+      ..azureRegion = s.effectiveAzureRegion;
     if (s.photoMode != wasPhoto) await _applyAnalysisMode();
     if (mounted) setState(() {});
   }

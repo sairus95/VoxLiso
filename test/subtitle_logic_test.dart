@@ -13,6 +13,7 @@ import 'package:voxliso/subtitle_locator.dart';
 import 'package:voxliso/subtitle_tracker.dart';
 import 'package:voxliso/updater.dart';
 import 'package:voxliso/text_tools.dart';
+import 'package:voxliso/translator.dart';
 import 'package:voxliso/voices.dart';
 
 void main() {
@@ -485,6 +486,30 @@ void main() {
       expect(t.push('Il fait bcau'), isNull);
       expect(t.push('Le chat est sur la table'), 'Il fait beau');
       expect(t.push('Le chat est sur la table'), 'Le chat est sur la table');
+    });
+  });
+
+  group('Azure Translator', () {
+    test('codes de langue', () {
+      expect(SubtitleTranslator.azureLang('fr'), 'fr');
+      expect(SubtitleTranslator.azureLang('no'), 'nb');
+      expect(SubtitleTranslator.azureLang('tl'), 'fil');
+      expect(SubtitleTranslator.azureLang('pt'), 'pt');
+      expect(SubtitleTranslator.azureLang('pt', target: true), 'pt-pt');
+    });
+    test('lit la réponse', () {
+      const body = '[{"translations":[{"text":"Où est la gare, s\'il vous plaît ?","to":"fr"}]},'
+          '{"translations":[{"text":"Merci.","to":"fr"}]}]';
+      expect(SubtitleTranslator.parseAzure(body, 2), ["Où est la gare, s'il vous plaît ?", 'Merci.']);
+      expect(SubtitleTranslator.parseAzure(body, 3), isNull);
+      expect(SubtitleTranslator.parseAzure('{"error":{}}', 1), isNull);
+    });
+    test('messages d\'erreur', () {
+      expect(SubtitleTranslator.azureErrorMessage(401, '{"error":{"code":401000}}'), contains('Clé Azure'));
+      expect(SubtitleTranslator.azureErrorMessage(403, '{"error":{"code":403001,"message":"quota"}}'),
+          contains('Quota'));
+      expect(SubtitleTranslator.azureErrorMessage(429, ''), contains('surchargé'));
+      expect(SubtitleTranslator.azureErrorMessage(500, 'oops'), 'Azure a répondu 500.');
     });
   });
 }
