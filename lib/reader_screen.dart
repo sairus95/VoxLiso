@@ -147,7 +147,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       accept: (code) =>
           kOtherLanguages.containsKey(code) && SubtitleTranslator.canTranslate(code),
     );
-    _translator.deeplKey = s.deeplKey;
+    _translator.deeplKey = s.effectiveDeeplKey;
     _history.decode(s.historyJson);
     if (ScreenCapture.isAvailable) {
       _screen.listen();
@@ -950,7 +950,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         speakLang = target;
         _translationEngine = result.engine;
         // DeepL réglé mais indisponible : on le signale, la lecture continue.
-        if (result.engine != 'DeepL' && s.deeplKey.isNotEmpty) {
+        if (result.engine != 'DeepL' && s.effectiveDeeplKey.isNotEmpty) {
           warning = _translator.deeplError;
         }
       } else if (_translator.autoDownloading.isNotEmpty) {
@@ -1471,7 +1471,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _speech.autoRate = s.autoRate;
     _scheduleDim(); // écran noir activé ou désactivé dans les réglages
     _tracker.stableFrames = s.stableFrames;
-    _translator.deeplKey = s.deeplKey;
+    _translator.deeplKey = s.effectiveDeeplKey;
     if (s.photoMode != wasPhoto) await _applyAnalysisMode();
     if (mounted) setState(() {});
   }

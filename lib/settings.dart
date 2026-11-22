@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'voices.dart';
+import 'version.dart';
 
 /// Réglages de l'application, conservés entre deux utilisations.
 class AppSettings {
@@ -170,6 +171,14 @@ class AppSettings {
   /// Clé de l'API DeepL (facultative) : traduction en ligne de meilleure qualité.
   String get deeplKey => _prefs.getString('deeplKey') ?? '';
   set deeplKey(String v) => _prefs.setString('deeplKey', v.trim());
+
+  /// Clé intégrée à l'APK GitHub (secret de compilation), sauf version boutique :
+  /// celle-ci partagerait le quota DeepL entre tous les utilisateurs.
+  static String get builtInDeeplKey =>
+      const bool.fromEnvironment('STORE_BUILD') ? '' : kBuiltInDeeplKey.trim();
+
+  /// Clé DeepL à utiliser : celle saisie dans les réglages, sinon la clé intégrée.
+  String get effectiveDeeplKey => deeplKey.isNotEmpty ? deeplKey : builtInDeeplKey;
 
   /// Ignorer le texte resté identique plus de 20 s (logo, heure, menu).
   bool get ignoreStatic => _prefs.getBool('ignoreStatic') ?? true;

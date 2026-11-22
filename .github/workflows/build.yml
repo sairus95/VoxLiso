@@ -61,7 +61,8 @@ jobs:
             echo "::warning::Secret ANDROID_KEYSTORE_B64 absent : clé temporaire, il faudra désinstaller avant chaque mise à jour."
           fi
       - name: Compiler l'APK
-        run: flutter build apk --release --dart-define=APP_VERSION=1.0.${{ github.run_number }}
+        # Clé DeepL intégrée à l'APK : lue dans le secret DEEPL_KEY (vide s'il n'existe pas).
+        run: flutter build apk --release --dart-define=APP_VERSION=1.0.${{ github.run_number }} --dart-define=DEEPL_KEY=${{ secrets.DEEPL_KEY }}
       - uses: actions/upload-artifact@v4
         with:
           name: voxliso-android

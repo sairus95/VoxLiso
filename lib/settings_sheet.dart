@@ -77,7 +77,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
 
   Future<void> _testDeepl() async {
     s.deeplKey = _deepl.text;
-    widget.translator.deeplKey = s.deeplKey;
+    widget.translator.deeplKey = s.effectiveDeeplKey;
     setState(() {
       _testing = true;
       _testResult = null;
@@ -462,10 +462,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
         const SizedBox(height: 4),
         Text(
           "La traduction hors ligne est parfois approximative. Avec une clé DeepL "
-          "gratuite (« DeepL API Free », 500 000 caractères par mois, à créer sur "
-          "deepl.com/pro-api), la traduction se fait en ligne, avec une bien meilleure "
-          "qualité. Les sous-titres sont alors envoyés à DeepL. Sans internet, VoxLiso "
-          "revient tout seul à la traduction hors ligne.",
+          "(formule gratuite « API Developer » sur deepl.com/pro-api : 1 million de "
+          "caractères au total, une quinzaine de films), la traduction se fait en ligne, "
+          "avec une bien meilleure qualité. Les sous-titres sont alors envoyés à DeepL. "
+          "Une fois le quota épuisé, ou sans internet, VoxLiso revient tout seul à la "
+          "traduction hors ligne.",
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
@@ -474,21 +475,28 @@ class _SettingsSheetState extends State<SettingsSheet> {
           obscureText: true,
           autocorrect: false,
           enableSuggestions: false,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Clé DeepL',
             hintText: 'xxxxxxxx-xxxx-…:fx',
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
+            helperText: AppSettings.builtInDeeplKey.isNotEmpty && _deepl.text.trim().isEmpty
+                ? 'Clé intégrée à l\'application utilisée. Collez une autre clé pour la remplacer.'
+                : null,
+            helperMaxLines: 2,
           ),
           onChanged: (v) => setState(() {
             s.deeplKey = v;
-            widget.translator.deeplKey = s.deeplKey;
+            widget.translator.deeplKey = s.effectiveDeeplKey;
             _testResult = null;
           }),
         ),
         const SizedBox(height: 8),
         Row(children: [
           OutlinedButton.icon(
-            onPressed: _testing || _deepl.text.trim().isEmpty ? null : _testDeepl,
+            onPressed: _testing ||
+                    (_deepl.text.trim().isEmpty && AppSettings.builtInDeeplKey.isEmpty)
+                ? null
+                : _testDeepl,
             icon: _testing
                 ? const SizedBox(
                     width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
@@ -501,7 +509,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
               onPressed: () => setState(() {
                 _deepl.clear();
                 s.deeplKey = '';
-                widget.translator.deeplKey = '';
+                widget.translator.deeplKey = s.effectiveDeeplKey;
                 _testResult = null;
               }),
               child: const Text('Effacer'),
