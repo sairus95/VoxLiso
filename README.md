@@ -45,6 +45,7 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 | Voix | **Moteur de voix** au choix sur Android (Google, Samsung…), bouton **Installer d'autres voix**, **hauteur** réglable (grave / aiguë) pour chaque voix. Par langue : voix principale et voix du 2e personnage, à écouter avec ▶. Sur iPhone, nom, homme/femme et voix « améliorées » ; sur Android, qualité seulement (écouter pour choisir). Par défaut : la voix la plus naturelle installée. |
 | Une voix par personnage | Dans les dialogues à tirets, la 2e réplique est lue avec une autre voix (ou plus grave s'il n'y en a qu'une). |
 | Traduction | Lire les sous-titres traduits en français, allemand, espagnol, italien, anglais ou portugais, sur le téléphone. Chaque langue se télécharge une fois (≈30 Mo), ensuite sans internet. **Option DeepL** : avec une clé gratuite « DeepL API Free » (500 000 caractères/mois), traduction en ligne de meilleure qualité, retour automatique au hors ligne sans réseau. |
+| Phrases coupées | Quand une phrase est répartie sur deux sous-titres (« Je pense que… » / « …tu as raison »), elle est traduite en entier plutôt qu'en deux morceaux : un sous-titre qui finit par « … », une virgule ou un petit mot (« que », « the », « und »…) attend la suite jusqu'à 3,5 s. Pas de regroupement si le sous-titre suivant est une nouvelle réplique (tiret). Seulement pendant la traduction. |
 | Vitesse de la voix | De x0,5 à x2. |
 | Réactivité | Rapide / Normale / Stable (Stable = moins d'erreurs si le téléphone bouge). |
 | Mode photo | Analyse de vraies photos au lieu de la vidéo : plus lent, mais plus fiable sur certains téléphones. |
@@ -116,6 +117,7 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 | `lib/language_detector.dart` | Détection automatique de la langue (ML Kit Language ID) |
 | `lib/voices.dart` | Liste et classement des voix du téléphone, choix du 2e personnage |
 | `lib/translator.dart` | Traduction hors ligne (ML Kit Translation) et téléchargement des langues |
+| `lib/sentence_joiner.dart` | Repérage des phrases coupées entre deux sous-titres et réunion des morceaux avant traduction |
 | `lib/history.dart` | Historique des sous-titres lus et son écran |
 | `lib/tutorial.dart` | Tutoriel illustré du premier lancement |
 | `lib/screen_capture.dart` | Lien avec le service Android de lecture de l'écran du téléphone |

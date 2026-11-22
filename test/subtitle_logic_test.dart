@@ -4,6 +4,7 @@ import 'package:voxliso/language_detector.dart';
 import 'package:voxliso/languages.dart';
 import 'dart:ui' show Rect;
 
+import 'package:voxliso/sentence_joiner.dart';
 import 'package:voxliso/spell_fixer.dart';
 import 'package:voxliso/static_filter.dart';
 import 'package:voxliso/subtitle_locator.dart';
@@ -20,8 +21,9 @@ void main() {
     });
 
     test('sépare les répliques de dialogue', () {
-      expect(cleanSubtitle(['- Tu viens ?', '- Non']), 'Tu viens ? Non.');
-      expect(subtitleParts(['- Tu viens ?', '- Non']), ['Tu viens ?', 'Non.']);
+      expect(cleanSubtitle(['- Tu viens ?', '- Non']), 'Tu viens ? Non');
+      expect(subtitleParts(['- Tu viens ?', '- Non']), ['Tu viens ?', 'Non']);
+      expect(subtitleParts(['- Oui', '- Non']), ['Oui.', 'Non']);
     });
 
     test('répliques sur une seule ligne', () {
@@ -326,6 +328,39 @@ void main() {
         loc.add([SeenLine('Menu principal', const Rect.fromLTRB(0.3, 0.1, 0.7, 0.15))]);
       }
       expect(loc.result(), isNull);
+    });
+  });
+
+  group('SentenceJoiner', () {
+    test('repère une phrase coupée', () {
+      expect(SentenceJoiner.isIncomplete('Je pense que…', 'fr'), isTrue);
+      expect(SentenceJoiner.isIncomplete('Je pense que...', 'fr'), isTrue);
+      expect(SentenceJoiner.isIncomplete('Je pense que', 'fr'), isTrue);
+      expect(SentenceJoiner.isIncomplete('Si tu viens,', 'fr'), isTrue);
+      expect(SentenceJoiner.isIncomplete("Il faut qu'", 'fr'), isTrue);
+      expect(SentenceJoiner.isIncomplete('I want to', 'en'), isTrue);
+      expect(SentenceJoiner.isIncomplete('Ich glaube, dass', 'de'), isTrue);
+      expect(SentenceJoiner.isIncomplete('Creo que', 'es'), isTrue);
+      expect(SentenceJoiner.isIncomplete('Penso che', 'it'), isTrue);
+      expect(SentenceJoiner.isIncomplete('Acho que', 'pt'), isTrue);
+    });
+    test('laisse les phrases complètes', () {
+      expect(SentenceJoiner.isIncomplete('Il fait beau', 'fr'), isFalse);
+      expect(SentenceJoiner.isIncomplete('Il fait beau.', 'fr'), isFalse);
+      expect(SentenceJoiner.isIncomplete('Tu viens ?', 'fr'), isFalse);
+      expect(SentenceJoiner.isIncomplete('Fais-le', 'fr'), isFalse);
+      expect(SentenceJoiner.isIncomplete("Va-t'en", 'fr'), isFalse);
+      expect(SentenceJoiner.isIncomplete('Je n’en peux plus', 'fr'), isFalse);
+      expect(SentenceJoiner.isIncomplete('I think so', 'en'), isFalse);
+      expect(SentenceJoiner.isIncomplete('Come on', 'en'), isFalse);
+      expect(SentenceJoiner.isIncomplete('Ich rufe dich an', 'de'), isFalse);
+      expect(SentenceJoiner.isIncomplete('Acho que não', 'pt'), isFalse);
+      expect(SentenceJoiner.isIncomplete('', 'fr'), isFalse);
+    });
+    test('réunit les deux morceaux', () {
+      expect(SentenceJoiner.join('Je pense que…', '…tu as raison.'), 'Je pense que tu as raison.');
+      expect(SentenceJoiner.join('Je pense que ...', '... tu as raison.'), 'Je pense que tu as raison.');
+      expect(SentenceJoiner.join('Si tu viens,', 'on part.'), 'Si tu viens, on part.');
     });
   });
 }

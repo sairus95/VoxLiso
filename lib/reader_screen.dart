@@ -16,6 +16,7 @@ import 'language_detector.dart';
 import 'languages.dart';
 import 'roi_overlay.dart';
 import 'screen_capture.dart';
+import 'sentence_joiner.dart';
 import 'settings.dart';
 import 'settings_sheet.dart';
 import 'speech_service.dart';
@@ -97,6 +98,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   /// Correction des mots mal lus (dictionnaires par langue).
   final SpellFixer _spell = SpellFixer();
+
+  /// Phrase coupée en attente de sa suite (traduction) : texte, langue et
+  /// position de la réplique (pour garder la voix du bon personnage).
+  ({String text, String lang, int index})? _held;
+  Timer? _heldTimer;
+  static const Duration _holdDelay = Duration(milliseconds: 3500);
 
   /// Repérage automatique des sous-titres en cours (null = inactif).
   SubtitleLocator? _locator;
@@ -551,8 +558,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Répliques séparées seulement si tout le sous-titre est nouveau
     // (pas pour la fin d'un sous-titre « en direct » qui défile).
     final segments = s.dialogueVoices && parts.length > 1 && toSay == text ? parts : [toSay];
-    _speakChain =
-        _speakChain.then((_) => _speakSubtitle(text, segments)).catchError((Object _) {});
+    // Un sous-titre qui commence par un tiret ouvre une nouvelle réplique :
+    // ce n'est jamais la suite de la phrase précédente.
+    final firstLine = lineTexts.map((l) => l.trim()).firstWhere((l) => l.isNotEmpty, orElse: () => '');
+    final dialogueStart = toSay == text && RegExp(r'^[-–—]').hasMatch(firstLine);
+    _speakChain = _speakChain
+        .then((_) => _speakSubtitle(text, segments, dialogueStart: dialogueStart))
+        .catchError((Object _) {});
   }
 
   // ------------------------------------------------- écran du téléphone
@@ -783,7 +795,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   /// Identifie la langue (mode Auto), traduit si demandé, puis dit le
   /// sous-titre : une voix par réplique dans les dialogues.
-  Future<void> _speakSubtitle(String fullText, List<String> segments) async {
+  Future<void> _speakSubtitle(String fullText, List<String> segments,
+      {bool dialogueStart = false}) async {
     final before = _langDetector.current;
     final lang = s.autoLang ? await _langDetector.detect(fullText) : s.lang;
     if (_closed || !_reading) return;
@@ -802,13 +815,68 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       }
     }
 
+    final target = _targetFor(lang);
+    if (target.isEmpty || target == lang) {
+      // Pas de traduction : une éventuelle phrase en attente part d'abord.
+      await _flushHeld();
+      await _translateAndSay(lang, segments);
+      return;
+    }
+
+    // Traduction : une phrase coupée entre deux sous-titres est traduite en entier.
+    final segs = List<String>.of(segments);
+    var firstIndex = 0;
+    final held = _held;
+    if (held != null) {
+      _heldTimer?.cancel();
+      _held = null;
+      if (held.lang == lang && !dialogueStart && segs.isNotEmpty) {
+        segs[0] = SentenceJoiner.join(held.text, segs[0]);
+        firstIndex = held.index;
+      } else {
+        await _translateAndSay(held.lang, [held.text], firstIndex: held.index);
+      }
+    }
+    // (longueur plafonnée : une phrase qui ne finit jamais n'est pas retenue sans fin)
+    if (segs.isNotEmpty && segs.last.length < 220 && SentenceJoiner.isIncomplete(segs.last, lang)) {
+      final index = firstIndex + segs.length - 1;
+      _held = (text: segs.removeLast(), lang: lang, index: index);
+      _heldTimer = Timer(_holdDelay, () {
+        // Pas de suite à temps : le morceau est traduit seul.
+        _speakChain = _speakChain.then((_) => _flushHeld()).catchError((Object _) {});
+      });
+    }
+    if (segs.isEmpty) return;
+    await _translateAndSay(lang, segs, firstIndex: firstIndex);
+  }
+
+  /// Langue dans laquelle lire un sous-titre de langue [lang] ('' = pas de traduction) :
+  /// celle choisie dans « Traduction » ; sinon, une langue autre que
+  /// fr/de/es/it/en/pt (néerlandais, polonais…) est traduite automatiquement.
+  String _targetFor(String lang) {
+    var target = s.translateTo;
+    if (target.isEmpty && !isReadLanguage(lang)) target = s.autoTranslateTo;
+    return target;
+  }
+
+  /// Traduit et dit la phrase en attente (délai écoulé, ou avant une autre lecture).
+  Future<void> _flushHeld() async {
+    final h = _held;
+    if (h == null) return;
+    _heldTimer?.cancel();
+    _held = null;
+    if (_closed || !_reading) return;
+    await _translateAndSay(h.lang, [h.text], firstIndex: h.index);
+  }
+
+  /// Traduit si besoin puis dit les répliques [segments] (langue [lang]).
+  /// [firstIndex] : position de la 1re réplique, pour la voix du personnage.
+  Future<void> _translateAndSay(String lang, List<String> segments, {int firstIndex = 0}) async {
+    if (_closed || !_reading || segments.isEmpty) return;
     var speakLang = lang;
     var out = segments;
     String? warning;
-    // Langue de lecture : celle choisie dans « Traduction » ; sinon, une langue
-    // autre que fr/de/es/it/en/pt (néerlandais, polonais…) est traduite automatiquement.
-    var target = s.translateTo;
-    if (target.isEmpty && !isReadLanguage(lang)) target = s.autoTranslateTo;
+    final target = _targetFor(lang);
     if (target.isNotEmpty && target != lang) {
       final result = await _translator.translateAll(segments, lang, target);
       if (result != null) {
@@ -840,8 +908,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         Utterance(
           out[i],
           locale: locale,
-          voice: i.isOdd ? second.voice : first,
-          pitch: i.isOdd ? second.pitch : s.pitchFor(speakLang),
+          voice: (firstIndex + i).isOdd ? second.voice : first,
+          pitch: (firstIndex + i).isOdd ? second.pitch : s.pitchFor(speakLang),
         ),
     ]);
     if (s.largeMode) HapticFeedback.lightImpact();
@@ -1265,6 +1333,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   Future<void> _stopReadingAsync() async {
     if (!_reading) return;
     _undim();
+    _heldTimer?.cancel();
+    _held = null;
     if (mounted && !_closed) setState(() => _reading = false);
     _speech.stop();
     WakelockPlus.disable();
@@ -1349,6 +1419,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _screen.dispose();
     _dimTimer?.cancel();
     _locTimer?.cancel();
+    _heldTimer?.cancel();
     if (_dimmed) {
       SystemBridge.setBrightness(-1);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
