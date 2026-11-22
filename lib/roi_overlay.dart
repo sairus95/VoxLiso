@@ -29,7 +29,11 @@ class RoiOverlay extends StatelessWidget {
     required this.onChanged,
     this.onHorizontalChanged,
     required this.onChangeEnd,
+    this.mirror,
   });
+
+  /// Zone miroir (haut, bas), lue si la zone est vide : tracée en pointillés.
+  final (double, double)? mirror;
 
   final double top;
   final double bottom;
@@ -88,7 +92,13 @@ class RoiOverlay extends StatelessWidget {
 
       return Stack(children: [
         Positioned.fill(
-          child: CustomPaint(painter: _RoiPainter(Rect.fromLTRB(l, top, r, bottom), boxes)),
+          child: CustomPaint(
+            painter: _RoiPainter(
+              Rect.fromLTRB(l, top, r, bottom),
+              boxes,
+              mirror == null ? null : Rect.fromLTRB(l, mirror!.$1, r, mirror!.$2),
+            ),
+          ),
         ),
         // Déplacer toute la zone.
         Positioned(
@@ -197,11 +207,31 @@ class RoiOverlay extends StatelessWidget {
 }
 
 class _RoiPainter extends CustomPainter {
-  _RoiPainter(this.zone, this.boxes);
+  _RoiPainter(this.zone, this.boxes, this.mirror);
 
   /// Zone en fractions 0..1.
   final Rect zone;
   final List<DetectedBox> boxes;
+
+  /// Zone miroir (fractions 0..1), ou null.
+  final Rect? mirror;
+
+  /// Rectangle en pointillés.
+  static void _dashedRect(Canvas canvas, Rect r, Paint paint) {
+    const dash = 8.0, space = 6.0;
+    void line(Offset a, Offset b) {
+      final length = (b - a).distance;
+      final dir = (b - a) / length;
+      for (var d = 0.0; d < length; d += dash + space) {
+        canvas.drawLine(a + dir * d, a + dir * math.min(d + dash, length), paint);
+      }
+    }
+
+    line(r.topLeft, r.topRight);
+    line(r.topRight, r.bottomRight);
+    line(r.bottomRight, r.bottomLeft);
+    line(r.bottomLeft, r.topLeft);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -221,6 +251,19 @@ class _RoiPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2,
     );
+    final m = mirror;
+    if (m != null) {
+      _dashedRect(
+        canvas,
+        Rect.fromLTRB(m.left * size.width, m.top * size.height, m.right * size.width,
+                m.bottom * size.height)
+            .deflate(1),
+        Paint()
+          ..color = kBrandYellow.withValues(alpha: 0.6)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
 
     final inPaint = Paint()
       ..color = Colors.greenAccent
@@ -249,5 +292,6 @@ class _RoiPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_RoiPainter old) => old.zone != zone || old.boxes != boxes;
+  bool shouldRepaint(_RoiPainter old) =>
+      old.zone != zone || old.boxes != boxes || old.mirror != mirror;
 }

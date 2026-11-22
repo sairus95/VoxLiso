@@ -34,6 +34,7 @@ import 'updater.dart';
 import 'tutorial.dart';
 import 'version.dart';
 import 'voices.dart';
+import 'zones.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key, required this.settings});
@@ -430,9 +431,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final enhance = s.enhance && _reading;
     final found = _handleResult(result, frame.uprightSize, info, ms, feedTracker: !enhance);
     if (!enhance) return;
-    final second = await _enhancedPass(image, cam, showBoxes: found.inZone.isEmpty);
+    final main = found.fromMirror ? const <TextLine>[] : found.inZone;
+    final second = await _enhancedPass(image, cam, showBoxes: main.isEmpty);
     if (_closed || !mounted) return;
-    if (found.inZone.isNotEmpty) {
+    if (main.isNotEmpty) {
       _onLines(
         found.inZone.map((l) => l.text).toList(),
         confidence: _confidenceOf(found.inZone),
@@ -441,10 +443,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
             : OcrReading(_keyed(second.map((l) => l.text).toList()),
                 confidence: _confidenceOf(second)),
       );
-    } else {
+    } else if (second != null && second.isNotEmpty) {
       // Rien dans la zone sur l'image normale : la lecture renforcée seule.
-      final lines = second ?? const <TextLine>[];
-      _onLines(lines.map((l) => l.text).toList(), confidence: _confidenceOf(lines));
+      _onLines(second.map((l) => l.text).toList(), confidence: _confidenceOf(second));
+    } else {
+      // Toujours rien dans la zone : la zone du haut (ou rien).
+      _onLines(found.inZone.map((l) => l.text).toList(),
+          confidence: _confidenceOf(found.inZone));
     }
   }
 
@@ -531,7 +536,27 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   /// Exploite le résultat de l'OCR (flux vidéo ou photo) : cadres, diagnostic, lecture.
   /// Renvoie les lignes trouvées et celles retenues dans la zone.
-  ({List<TextLine> all, List<TextLine> inZone}) _handleResult(
+  /// Zone miroir de la caméra (sous-titres en haut), si activée.
+  (double, double)? get _cameraMirror => s.topSubtitles ? mirrorBand(_roiTop, _roiBottom) : null;
+
+  /// Zone miroir de l'écran du téléphone : seulement en plein écran (en
+  /// portrait, sous la vidéo, ce sont les commentaires).
+  (double, double)? _screenMirror(bool landscape) {
+    if (!s.topSubtitles || !landscape) return null;
+    final (top, bottom) = _screenBand(true);
+    return mirrorBand(top, bottom);
+  }
+
+  /// Tri de lecture : de haut en bas, puis de gauche à droite sur une même ligne.
+  static int _byPosition(Rect ra, Rect rb) {
+    final dy = ra.center.dy - rb.center.dy;
+    if (dy.abs() < math.min(ra.height, rb.height) * 0.5) {
+      return ra.left.compareTo(rb.left);
+    }
+    return dy < 0 ? -1 : 1;
+  }
+
+  ({List<TextLine> all, List<TextLine> inZone, bool fromMirror}) _handleResult(
     RecognizedText result,
     Size upright,
     String info,
@@ -550,9 +575,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Partie de l'image visible dans l'aperçu.
     final visible = Rect.fromLTRB(
         crop.ox * w, crop.oy * h, (crop.ox + crop.vw) * w, (crop.oy + crop.vh) * h);
+    // Zone miroir (sous-titres en haut), lue seulement si la zone est vide.
+    final mirror = _cameraMirror;
+    final mTop = mirror == null ? 0.0 : (crop.oy + mirror.$1 * crop.vh) * h;
+    final mBottom = mirror == null ? 0.0 : (crop.oy + mirror.$2 * crop.vh) * h;
 
     final all = <TextLine>[];
     final lines = <TextLine>[];
+    final mirrorLines = <TextLine>[];
     for (final block in result.blocks) {
       for (final line in block.lines) {
         final r = line.boundingBox;
@@ -561,20 +591,18 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         all.add(line);
         // Lue si son centre est entre les bords gauche et droit de la zone et
         // si au moins la moitié de sa hauteur est entre les bords haut et bas.
-        if (r.center.dx < left || r.center.dx > right) continue;
+        if (r.center.dx < left || r.center.dx > right || r.height <= 0) continue;
         final overlap = math.min(r.bottom, bottom) - math.max(r.top, top);
-        if (r.height > 0 && overlap >= r.height * 0.5) lines.add(line);
+        if (overlap >= r.height * 0.5) {
+          lines.add(line);
+        } else if (mirror != null &&
+            math.min(r.bottom, mBottom) - math.max(r.top, mTop) >= r.height * 0.5) {
+          mirrorLines.add(line);
+        }
       }
     }
-    // De haut en bas, puis de gauche à droite sur une même ligne.
-    lines.sort((a, b) {
-      final ra = a.boundingBox, rb = b.boundingBox;
-      final dy = ra.center.dy - rb.center.dy;
-      if (dy.abs() < math.min(ra.height, rb.height) * 0.5) {
-        return ra.left.compareTo(rb.left);
-      }
-      return dy < 0 ? -1 : 1;
-    });
+    lines.sort((a, b) => _byPosition(a.boundingBox, b.boundingBox));
+    mirrorLines.sort((a, b) => _byPosition(a.boundingBox, b.boundingBox));
 
     // Pixels de l'image -> fractions de l'aperçu 16:9 (pour les cadres).
     Rect frac(Rect r) => Rect.fromLTRB(
@@ -583,11 +611,19 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           (r.right / w - crop.ox) / crop.vw,
           (r.bottom / h - crop.oy) / crop.vh,
         );
-    // Texte fixe (logo, heure, menu) : ignoré.
-    final fixedIdx =
-        s.ignoreStatic ? _staticFilter.update([for (final l in lines) l.text]) : const <int>{};
-    final fixed = {for (final i in fixedIdx) lines[i]};
-    if (fixed.isNotEmpty) lines.removeWhere(fixed.contains);
+    // Texte fixe (logo, heure, menu, titre en haut de l'image) : ignoré.
+    final candidates = [...lines, ...mirrorLines];
+    final fixedIdx = s.ignoreStatic
+        ? _staticFilter.update([for (final l in candidates) l.text])
+        : const <int>{};
+    final fixed = {for (final i in fixedIdx) candidates[i]};
+    if (fixed.isNotEmpty) {
+      lines.removeWhere(fixed.contains);
+      mirrorLines.removeWhere(fixed.contains);
+    }
+    // Rien dans la zone : les sous-titres sont peut-être en haut de l'image.
+    final fromMirror = lines.isEmpty && mirrorLines.isNotEmpty;
+    if (fromMirror) lines.addAll(mirrorLines);
     final boxes = [
       for (final l in all)
         DetectedBox(frac(l.boundingBox), lines.contains(l), fixed: fixed.contains(l)),
@@ -598,7 +634,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _textOutsideOnly = lines.isEmpty && all.isNotEmpty;
       _diag = 'v$kAppVersion · ${_landscape ? 'paysage' : 'portrait'} · '
           '${s.photoMode ? 'Mode photo · ' : ''}$info · ${w.toInt()}×${h.toInt()} · ${ms}ms\n'
-          'Texte trouvé : ${all.length} ligne(s), ${lines.length} dans la zone'
+          'Texte trouvé : ${all.length} ligne(s), ${lines.length} '
+          '${fromMirror ? 'dans la zone du haut' : 'dans la zone'}'
           '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
     });
@@ -609,7 +646,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (_reading && feedTracker) {
       _onLines(lines.map((l) => l.text).toList(), confidence: _confidenceOf(lines));
     }
-    return (all: all, inZone: lines);
+    return (all: all, inZone: lines, fromMirror: fromMirror);
   }
 
   /// Lignes lues -> texte suivi d'une image à l'autre : répliques séparées par
@@ -663,23 +700,33 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _locator!.add([for (final l in f.lines) SeenLine(l.text, l.rect)]);
     }
     final (top, bottom) = _screenBand(f.landscape);
+    final mirror = _screenMirror(f.landscape);
     final inZone = <ScreenLine>[];
+    final inMirror = <ScreenLine>[];
     for (final l in f.lines) {
       final r = l.rect;
+      if (r.height <= 0) continue;
       final overlap = math.min(r.bottom, bottom) - math.max(r.top, top);
-      if (r.height > 0 && overlap >= r.height * 0.5) inZone.add(l);
-    }
-    inZone.sort((a, b) {
-      final dy = a.rect.center.dy - b.rect.center.dy;
-      if (dy.abs() < math.min(a.rect.height, b.rect.height) * 0.5) {
-        return a.rect.left.compareTo(b.rect.left);
+      if (overlap >= r.height * 0.5) {
+        inZone.add(l);
+      } else if (mirror != null &&
+          math.min(r.bottom, mirror.$2) - math.max(r.top, mirror.$1) >= r.height * 0.5) {
+        inMirror.add(l);
       }
-      return dy < 0 ? -1 : 1;
-    });
-    final fixedIdx =
-        s.ignoreStatic ? _staticFilter.update([for (final l in inZone) l.text]) : const <int>{};
-    final fixed = {for (final i in fixedIdx) inZone[i]};
-    if (fixed.isNotEmpty) inZone.removeWhere(fixed.contains);
+    }
+    inZone.sort((a, b) => _byPosition(a.rect, b.rect));
+    inMirror.sort((a, b) => _byPosition(a.rect, b.rect));
+    final candidates = [...inZone, ...inMirror];
+    final fixedIdx = s.ignoreStatic
+        ? _staticFilter.update([for (final l in candidates) l.text])
+        : const <int>{};
+    final fixed = {for (final i in fixedIdx) candidates[i]};
+    if (fixed.isNotEmpty) {
+      inZone.removeWhere(fixed.contains);
+      inMirror.removeWhere(fixed.contains);
+    }
+    final fromMirror = inZone.isEmpty && inMirror.isNotEmpty;
+    if (fromMirror) inZone.addAll(inMirror);
     final raw = inZone.map((l) => l.text).join(' / ');
     if (mounted) {
       setState(() {
@@ -689,7 +736,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         ];
         _screenBoxesLandscape = f.landscape;
         _diag = 'Écran du téléphone (${f.landscape ? 'paysage' : 'portrait'})\n'
-            'Texte trouvé : ${f.lines.length} ligne(s), ${inZone.length} dans la zone'
+            'Texte trouvé : ${f.lines.length} ligne(s), ${inZone.length} '
+            '${fromMirror ? 'dans la zone du haut' : 'dans la zone'}'
             '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
             '${raw.isEmpty ? '' : '\n« $raw »'}';
       });
@@ -1883,6 +1931,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           left: s.roiLeft,
           right: s.roiRight,
           boxes: _boxes,
+          mirror: _cameraMirror,
           onChanged: (t, b) => setState(() => _setRoi(t, b)),
           onHorizontalChanged: (l, r) => setState(() {
             s.roiLeft = l;
@@ -1962,6 +2011,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                     top: top,
                     bottom: bottom,
                     boxes: boxes,
+                    mirror: _screenMirror(land),
                     onChanged: (t, b) => setState(() {
                       if (land) {
                         s.screenTopLandscape = t;
