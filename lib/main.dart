@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'logo.dart';
+import 'premium.dart';
 import 'reader_screen.dart';
 import 'settings.dart';
 import 'tutorial.dart';
@@ -15,6 +16,8 @@ Future<void> main() async {
     DeviceOrientation.landscapeRight,
   ]);
   final settings = await AppSettings.load();
+  // Achat VoxLiso Plus : lu tout de suite, la boutique répond ensuite.
+  await Premium.instance.init();
   runApp(VoxLisoApp(settings: settings));
 }
 

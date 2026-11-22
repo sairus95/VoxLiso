@@ -12,3 +12,8 @@ ios/Flutter/Generated.xcconfig
 ios/Flutter/flutter_export_environment.sh
 android/.gradle/
 android/local.properties
+
+# Clé de signature : ne jamais l'envoyer sur GitHub
+key.properties
+*.jks
+*.keystore

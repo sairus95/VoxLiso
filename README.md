@@ -79,6 +79,27 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 
 ---
 
+## VoxLiso Plus et publication dans les boutiques
+
+**VoxLiso Plus** est un achat unique (sans abonnement) qui débloque la **traduction** et la **lecture de l'écran du téléphone**. La lecture des sous-titres avec la caméra reste gratuite.
+
+- Seule la **version des boutiques** (compilée avec `--dart-define=STORE_BUILD=true`) demande l'achat. L'APK publié sur GitHub et les compilations sur l'ordinateur ont toutes les fonctions débloquées.
+- Produit à créer, avec l'identifiant **`voxliso_plus`** (produit **non consommable**) :
+  - Play Console > Monétiser > Produits > Produits intégrés ;
+  - App Store Connect > l'app > Achats intégrés > « Non consommable ».
+- Code : `lib/premium.dart` (achat, restauration, mémorisation) et `lib/plus_screen.dart` (écran VoxLiso Plus).
+
+### Clé d'envoi Google Play
+GitHub Actions produit aussi **`voxliso-play-store`** (fichier `.aab` à envoyer dans la Play Console), signé avec la clé d'envoi, si ces secrets existent (Settings > Secrets and variables > Actions) :
+
+| Secret | Contenu |
+|---|---|
+| `ANDROID_RELEASE_KEYSTORE_B64` | le fichier `.jks` encodé en base64 |
+| `ANDROID_RELEASE_PASSWORD` | le mot de passe de la clé |
+| `ANDROID_RELEASE_ALIAS` | `upload` |
+
+Dans la Play Console, laissez Google gérer la clé de signature de l'application (« Signature d'application Play ») : la clé ci-dessus ne sert qu'à envoyer les mises à jour. **Ne publiez jamais le fichier `.jks` ni son mot de passe.**
+
 ## Conseils d'utilisation
 - **En paysage**, sur un petit support face à la télé : c'est la meilleure position. La télé remplit l'image, les sous-titres sont plus grands et le téléphone ne bouge pas. Activez la rotation automatique de l'écran du téléphone.
 - **En portrait**, tenez le téléphone le plus immobile possible.

@@ -61,11 +61,45 @@ jobs:
             echo "::warning::Secret ANDROID_KEYSTORE_B64 absent : clé temporaire, il faudra désinstaller avant chaque mise à jour."
           fi
       - name: Compiler l'APK
-        run: flutter build apk --release --dart-define=APP_VERSION=1.0.${{ github.run_number }}
+        # APK publié sur GitHub : toutes les fonctions débloquées (pas de STORE_BUILD).
+        run: >
+          flutter build apk --release
+          --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }}
+          --dart-define=APP_VERSION=1.0.${{ github.run_number }}
       - uses: actions/upload-artifact@v4
         with:
           name: voxliso-android
           path: build/app/outputs/flutter-apk/app-release.apk
+      - name: Paquet pour le Play Store (AAB signé avec la clé d'envoi)
+        # Secrets à créer : ANDROID_RELEASE_KEYSTORE_B64, ANDROID_RELEASE_PASSWORD,
+        # ANDROID_RELEASE_ALIAS. Version boutique : VoxLiso Plus à acheter.
+        env:
+          RELEASE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+          RELEASE_PASSWORD: ${{ secrets.ANDROID_RELEASE_PASSWORD }}
+          RELEASE_ALIAS: ${{ secrets.ANDROID_RELEASE_ALIAS }}
+        run: |
+          if [ -z "$RELEASE_B64" ] || [ -z "$RELEASE_PASSWORD" ]; then
+            echo "::warning::Secrets ANDROID_RELEASE_* absents : pas de paquet Play Store."
+            exit 0
+          fi
+          echo "$RELEASE_B64" | base64 -d > android/app/upload.jks
+          {
+            echo "storeFile=upload.jks"
+            echo "storePassword=$RELEASE_PASSWORD"
+            echo "keyPassword=$RELEASE_PASSWORD"
+            echo "keyAlias=${RELEASE_ALIAS:-upload}"
+          } > android/key.properties
+          flutter build appbundle --release \
+            --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} \
+            --dart-define=APP_VERSION=1.0.${{ github.run_number }} \
+            --dart-define=STORE_BUILD=true
+          rm -f android/key.properties android/app/upload.jks
+          echo "PLAY_AAB=1" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        if: env.PLAY_AAB == '1'
+        with:
+          name: voxliso-play-store
+          path: build/app/outputs/bundle/release/app-release.aab
       - name: Publier l'APK dans « Releases » (téléchargement direct sur le téléphone)
         if: github.ref == 'refs/heads/main'
         run: |
@@ -92,7 +126,7 @@ jobs:
       - run: flutter pub get
       - name: Compiler pour iPhone (sans signature)
         run: |
-          if ! flutter build ios --release --no-codesign --dart-define=APP_VERSION=1.0.${{ github.run_number }} --verbose > ios-build.log 2>&1; then
+          if ! flutter build ios --release --no-codesign --dart-define=APP_VERSION=1.0.${{ github.run_number }} --dart-define=STORE_BUILD=true --verbose > ios-build.log 2>&1; then
             echo "----- Erreurs Xcode -----"
             grep -nE "error:|\*\* BUILD FAILED|Error \(Xcode\)|requires a development team|Signing for" ios-build.log | head -60
             echo "----- Fin du journal -----"

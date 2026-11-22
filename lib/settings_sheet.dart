@@ -3,6 +3,8 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 
 import 'languages.dart';
+import 'plus_screen.dart';
+import 'premium.dart';
 import 'settings.dart';
 import 'system_bridge.dart';
 import 'translator.dart';
@@ -64,8 +66,13 @@ class _SettingsSheetState extends State<SettingsSheet> {
 
   @override
   void dispose() {
+    Premium.instance.removeListener(_onPremium);
     _deepl.dispose();
     super.dispose();
+  }
+
+  void _onPremium() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _testDeepl() async {
@@ -92,6 +99,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
   @override
   void initState() {
     super.initState();
+    Premium.instance.addListener(_onPremium);
     SystemBridge.ttsEngines().then((e) {
       if (mounted) setState(() => _engines = e);
     });
@@ -111,6 +119,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
           children: [
             Text('Réglages', style: theme.textTheme.titleLarge),
             const SizedBox(height: 16),
+            if (kStoreBuild) ...[
+              ..._plusSection(theme),
+              const Divider(height: 32),
+            ],
             ..._accessibilitySection(theme),
             const Divider(height: 32),
             ..._voiceSection(theme),
@@ -123,6 +135,27 @@ class _SettingsSheetState extends State<SettingsSheet> {
       ),
     );
   }
+
+  // ---------------------------------------------------------- VoxLiso Plus
+
+  List<Widget> _plusSection(ThemeData theme) {
+    final unlocked = Premium.instance.unlocked;
+    return [
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(unlocked ? Icons.verified : Icons.lock_open, color: theme.colorScheme.primary),
+        title: const Text('VoxLiso Plus'),
+        subtitle: Text(unlocked
+            ? 'Activé : ${_plusFeatures()}.'
+            : '${_plusFeatures(capital: true)}. Achat unique, sans abonnement.'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => openPlusScreen(context),
+      ),
+    ];
+  }
+
+  String _plusFeatures({bool capital = false}) =>
+      '${capital ? 'T' : 't'}raduction${Platform.isAndroid ? ' et lecture de l\'écran du téléphone' : ''}';
 
   // --------------------------------------------------------- accessibilité
 
@@ -399,6 +432,13 @@ class _SettingsSheetState extends State<SettingsSheet> {
   List<Widget> _translationSection(ThemeData theme) {
     final t = widget.translator;
     final target = s.translateTo;
+    if (!Premium.instance.has(PlusFeature.translation)) {
+      return [
+        Text('Traduction', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        const PlusLockedCard(feature: PlusFeature.translation),
+      ];
+    }
     return [
       Text('Traduction', style: theme.textTheme.titleMedium),
       const SizedBox(height: 8),

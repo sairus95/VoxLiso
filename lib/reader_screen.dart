@@ -10,6 +10,8 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'camera_input.dart';
 import 'history.dart';
 import 'logo.dart';
+import 'plus_screen.dart';
+import 'premium.dart';
 import 'language_detector.dart';
 import 'languages.dart';
 import 'roi_overlay.dart';
@@ -94,6 +96,15 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   AppSettings get s => widget.settings;
 
+  /// Langue de traduction choisie, si VoxLiso Plus permet de traduire.
+  String get _translateTo =>
+      Premium.instance.has(PlusFeature.translation) ? s.translateTo : '';
+
+  void _onPremium() {
+    if (!mounted || _closed) return;
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -108,6 +119,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
     _translator.deeplKey = s.deeplKey;
     _history.decode(s.historyJson);
+    Premium.instance.addListener(_onPremium);
+    // Lecture de l'écran réservée à VoxLiso Plus.
+    if (s.screenSource && !Premium.instance.has(PlusFeature.screen)) s.source = 'camera';
     if (ScreenCapture.isAvailable) {
       _screen.listen();
       _screen.frames.listen(_onScreenFrame);
@@ -481,6 +495,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   Future<void> _setSource(String source) async {
     if (source == s.source) return;
+    if (source == 'screen' && !Premium.instance.has(PlusFeature.screen)) {
+      await openPlusScreen(context, reason: PlusFeature.screen);
+      if (!mounted || !Premium.instance.has(PlusFeature.screen)) return;
+    }
     if (_reading) await _stopReadingAsync();
     s.source = source;
     _tracker.reset();
@@ -678,8 +696,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     String? warning;
     // Langue de lecture : celle choisie dans « Traduction » ; sinon, une langue
     // autre que fr/de/es/it/en/pt (néerlandais, polonais…) est traduite automatiquement.
-    var target = s.translateTo;
-    if (target.isEmpty && !isReadLanguage(lang)) target = s.autoTranslateTo;
+    // Sans VoxLiso Plus, pas de traduction : lecture dans la langue d'origine.
+    final canTranslate = Premium.instance.has(PlusFeature.translation);
+    var target = _translateTo;
+    if (canTranslate && target.isEmpty && !isReadLanguage(lang)) target = s.autoTranslateTo;
     if (target.isNotEmpty && target != lang) {
       final result = await _translator.translateAll(segments, lang, target);
       if (result != null) {
@@ -951,6 +971,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   void dispose() {
     _closed = true;
     WidgetsBinding.instance.removeObserver(this);
+    Premium.instance.removeListener(_onPremium);
     _releaseCamera();
     _recognizer.close();
     _langDetector.close();
@@ -1398,14 +1419,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (s.autoLang || s.translateTo.isNotEmpty)
+          if (s.autoLang || _translateTo.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 [
                   if (s.autoLang) 'Langue détectée : ${languageName(_langDetector.current)}',
-                  if (s.translateTo.isNotEmpty)
-                    'lu en ${languageFor(s.translateTo).label}'
+                  if (_translateTo.isNotEmpty)
+                    'lu en ${languageFor(_translateTo).label}'
                         '${_lastOriginal.isNotEmpty && _translationEngine.isNotEmpty ? ' ($_translationEngine)' : ''}',
                 ].join(' · '),
                 style: theme.textTheme.labelMedium

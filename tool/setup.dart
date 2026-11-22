@@ -106,7 +106,56 @@ bool _android() {
     proguard.writeAsStringSync('$existing\n$_proguardRules');
   }
   stdout.writeln('✔ proguard-rules.pro : modèles ML Kit inutilisés ignorés');
+  if (!_releaseSigning(gradle)) return false;
   return _screenCapture(gradle);
+}
+
+/// Signature des versions destinées au Play Store : si android/key.properties
+/// existe (créé par GitHub Actions à partir des secrets ANDROID_RELEASE_*),
+/// la clé d'envoi Google Play est utilisée ; sinon, la clé « debug » habituelle.
+bool _releaseSigning(File gradle) {
+  var g = gradle.readAsStringSync();
+  if (g.contains('key.properties')) {
+    stdout.writeln('✔ Signature Play Store déjà configurée');
+    return true;
+  }
+  if (!gradle.path.endsWith('.kts')) {
+    stderr.writeln('⚠️  ${gradle.path} : signature Play Store à configurer à la main');
+    return false;
+  }
+  const debugLine = 'signingConfig = signingConfigs.getByName("debug")';
+  if (!g.contains(debugLine) || !g.contains('\nandroid {')) {
+    stderr.writeln('❌ ${gradle.path} : configuration de signature introuvable');
+    return false;
+  }
+  g = 'import java.io.FileInputStream\nimport java.util.Properties\n\n$g';
+  g = g.replaceFirst('\nandroid {', '''
+
+// Clé d'envoi Google Play (voir tool/setup.dart).
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) load(FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    signingConfigs {
+        create("release") {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }''');
+  g = g.replaceFirst(
+    debugLine,
+    'signingConfig = signingConfigs.getByName('
+        'if (keystorePropertiesFile.exists()) "release" else "debug")',
+  );
+  gradle.writeAsStringSync(g);
+  stdout.writeln('✔ Signature Play Store : clé de android/key.properties si présente');
+  return true;
 }
 
 /// Lecture de l'écran du téléphone (vidéos YouTube, navigateur…) :
