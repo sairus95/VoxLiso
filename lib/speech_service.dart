@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_tts/flutter_tts.dart';
 
+import 'rate_pacer.dart';
 import 'voices.dart';
 
 /// Une phrase à dire, avec sa langue, sa voix et sa hauteur.
@@ -23,13 +25,28 @@ class Utterance {
 /// Synthèse vocale avec une petite file d'attente.
 class SpeechService {
   final FlutterTts _tts = FlutterTts();
-  final Queue<Utterance> _queue = Queue();
+
+  /// Phrases en attente, avec le numéro du sous-titre (appel à [sayAll]) d'où elles viennent.
+  final Queue<({Utterance u, int batch})> _queue = Queue();
+  int _batch = 0;
   bool _speaking = false;
   String? _current; // voix ou langue réglée en ce moment
   double _pitch = 1.0;
 
+  /// Vitesse choisie dans les réglages (1.0 = normale) et vitesse réglée sur le moteur.
+  double _baseRate = 1.0;
+  double _appliedRate = -1;
+
   /// Si vrai, un nouveau sous-titre coupe celui en cours de lecture.
   bool interrupt = false;
+
+  /// Vitesse automatique : accélère un peu quand la voix prend du retard.
+  bool autoRate = true;
+  final RatePacer _pacer = RatePacer();
+  DateTime? _idleSince;
+
+  /// Accélération en cours (1.0 = aucune), pour l'afficher.
+  final ValueNotifier<double> boost = ValueNotifier(1.0);
 
   /// Au-delà, les plus anciennes phrases en attente sont abandonnées
   /// pour ne pas prendre de retard sur l'image.
@@ -63,6 +80,7 @@ class SpeechService {
     } catch (_) {}
     _current = null;
     _pitch = -1; // force le réglage de la hauteur à la prochaine phrase
+    _appliedRate = -1;
   }
 
   /// Toutes les voix installées sur le téléphone (format brut de flutter_tts).
@@ -80,9 +98,35 @@ class SpeechService {
     final available = await isAvailable(locale);
     await _tts.setLanguage(locale);
     _current = 'l:$locale';
+    _baseRate = rate;
+    await _setRate(rate);
+    return available;
+  }
+
+  Future<void> _setRate(double rate) async {
     // flutter_tts : 0.5 = vitesse normale sur Android comme sur iOS.
     await _tts.setSpeechRate((0.5 * rate).clamp(0.1, 1.0).toDouble());
-    return available;
+    _appliedRate = rate;
+  }
+
+  /// Vitesse de la phrase qui commence : vitesse choisie, accélérée si les
+  /// sous-titres suivants attendent déjà (vitesse automatique).
+  Future<void> _paceFor(int batch) async {
+    var factor = 1.0;
+    if (autoRate && !interrupt) {
+      // Retard = texte encore à dire alors qu'un sous-titre suivant est déjà arrivé.
+      final behind = _queue.any((e) => e.batch != batch);
+      final waiting = behind ? _queue.fold<int>(0, (n, e) => n + e.u.text.length) : 0;
+      factor = _pacer.next(waiting);
+    } else {
+      _pacer.reset();
+    }
+    // iPhone : la vitesse d'AVSpeech monte plus vite qu'au-dessus de la normale
+    // sur Android, on y applique une accélération plus douce.
+    final effective = Platform.isIOS ? 1.0 + (factor - 1.0) * 0.6 : factor;
+    final rate = (_baseRate * effective).clamp(0.2, 2.0).toDouble();
+    if ((rate - _appliedRate).abs() > 0.01) await _setRate(rate);
+    boost.value = factor;
   }
 
   /// La voix de [locale] est-elle installée sur le téléphone ?
@@ -102,13 +146,15 @@ class SpeechService {
   /// Dit plusieurs phrases à la suite (ex. les répliques d'un dialogue).
   void sayAll(List<Utterance> items) {
     if (items.isEmpty) return;
+    final batch = ++_batch;
+    final entries = [for (final u in items) (u: u, batch: batch)];
     if (interrupt) {
       _queue
         ..clear()
-        ..addAll(items);
+        ..addAll(entries);
       if (_speaking) _tts.stop();
     } else {
-      _queue.addAll(items);
+      _queue.addAll(entries);
       while (_queue.length > _maxQueue) {
         _queue.removeFirst();
       }
@@ -140,10 +186,17 @@ class SpeechService {
   Future<void> _drain() async {
     if (_speaking) return;
     _speaking = true;
+    // Après un vrai silence, on repart de la vitesse choisie.
+    final idle = _idleSince;
+    if (idle != null && DateTime.now().difference(idle) > const Duration(seconds: 2)) {
+      _pacer.reset();
+    }
     try {
       while (_queue.isNotEmpty) {
-        final u = _queue.removeFirst();
+        final e = _queue.removeFirst();
+        final u = e.u;
         await _apply(u);
+        await _paceFor(e.batch);
         // Sécurité : ne jamais rester bloqué si la fin de lecture n'est pas signalée.
         final limit = Duration(seconds: 6 + u.text.length ~/ 6);
         try {
@@ -154,11 +207,15 @@ class SpeechService {
       }
     } finally {
       _speaking = false;
+      _idleSince = DateTime.now();
+      boost.value = 1.0; // plus rien à dire : plus de retard
     }
   }
 
   Future<void> stop() async {
     _queue.clear();
+    _pacer.reset();
+    boost.value = 1.0;
     await _tts.stop();
   }
 }

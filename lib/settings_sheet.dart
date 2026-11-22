@@ -353,6 +353,15 @@ class _SettingsSheetState extends State<SettingsSheet> {
         onChanged: (v) => setState(() => s.rate = v),
         onChangeEnd: (_) => widget.onVoiceChanged(),
       ),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Vitesse automatique'),
+        subtitle: const Text(
+            'La voix accélère un peu (jusqu\'à +40 %) quand les sous-titres défilent vite, '
+            'pour ne pas prendre de retard, puis revient à la vitesse choisie.'),
+        value: s.autoRate,
+        onChanged: (v) => setState(() => s.autoRate = v),
+      ),
       if (widget.voiceMissing)
         Text(
           'Voix ${widget.voice.label} absente. ${_installHint()}',

@@ -66,6 +66,11 @@ class AppSettings {
     screenBottomLandscape = defaultScreenBottomLandscape;
   }
 
+  /// Vitesse automatique : la voix accélère un peu (jusqu'à +40 %) quand
+  /// les sous-titres défilent plus vite qu'elle ne parle.
+  bool get autoRate => _prefs.getBool('autoRate') ?? true;
+  set autoRate(bool v) => _prefs.setBool('autoRate', v);
+
   /// Couper la phrase en cours quand un nouveau sous-titre apparaît.
   bool get interrupt => _prefs.getBool('interrupt') ?? false;
   set interrupt(bool v) => _prefs.setBool('interrupt', v);

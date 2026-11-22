@@ -4,6 +4,7 @@ import 'package:voxliso/language_detector.dart';
 import 'package:voxliso/languages.dart';
 import 'dart:ui' show Rect;
 
+import 'package:voxliso/rate_pacer.dart';
 import 'package:voxliso/sentence_joiner.dart';
 import 'package:voxliso/spell_fixer.dart';
 import 'package:voxliso/static_filter.dart';
@@ -361,6 +362,32 @@ void main() {
       expect(SentenceJoiner.join('Je pense que…', '…tu as raison.'), 'Je pense que tu as raison.');
       expect(SentenceJoiner.join('Je pense que ...', '... tu as raison.'), 'Je pense que tu as raison.');
       expect(SentenceJoiner.join('Si tu viens,', 'on part.'), 'Si tu viens, on part.');
+    });
+  });
+
+  group('RatePacer', () {
+    test('vitesse normale sans retard', () {
+      final p = RatePacer();
+      expect(p.next(0), 1.0);
+      expect(p.next(10), 1.0);
+    });
+    test('accélère avec le retard, sans dépasser +40 %', () {
+      final p = RatePacer();
+      final a = p.next(50);
+      expect(a, greaterThan(1.0));
+      expect(a, lessThanOrEqualTo(1.25));
+      p.next(300);
+      expect(p.next(300), 1.4);
+      expect(p.next(1000), 1.4);
+    });
+    test('monte par paliers et redescend doucement', () {
+      final p = RatePacer();
+      expect(p.next(300), 1.25); // +25 % au plus d'un coup
+      expect(p.next(300), 1.4);
+      expect(p.next(0), closeTo(1.3, 1e-9));
+      expect(p.next(0), closeTo(1.2, 1e-9));
+      p.reset();
+      expect(p.factor, 1.0);
     });
   });
 }

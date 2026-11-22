@@ -153,6 +153,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       s.source = 'camera';
     }
     _speech.interrupt = s.interrupt;
+    _speech.autoRate = s.autoRate;
+    _speech.boost.addListener(_onBoost);
     _zoom = s.zoom;
     _start();
   }
@@ -165,6 +167,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _autoCheckUpdate();
     await _applyVoice();
     await _initCamera();
+  }
+
+  /// Vitesse automatique : la voix accélère, on l'affiche (« voix ×1,2 »).
+  void _onBoost() {
+    if (mounted && !_closed) setState(() {});
   }
 
   /// Voix utilisée : la langue choisie, ou la dernière langue détectée en mode Auto.
@@ -1402,6 +1409,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       ),
     );
     _speech.interrupt = s.interrupt;
+    _speech.autoRate = s.autoRate;
     _tracker.stableFrames = s.stableFrames;
     _translator.deeplKey = s.deeplKey;
     if (s.photoMode != wasPhoto) await _applyAnalysisMode();
@@ -1420,6 +1428,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _dimTimer?.cancel();
     _locTimer?.cancel();
     _heldTimer?.cancel();
+    _speech.boost.removeListener(_onBoost);
     if (_dimmed) {
       SystemBridge.setBrightness(-1);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -1867,6 +1876,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         : s.screenSource
         ? 'Appuyez sur « Lire », autorisez la capture, puis ouvrez votre vidéo.'
         : 'Visez l\'écran, placez la bande jaune sur les sous-titres, puis appuyez sur « Lire ».';
+    final boost = _speech.boost.value;
     return Container(
       constraints: const BoxConstraints(minHeight: 72),
       padding: const EdgeInsets.all(12),
@@ -1878,7 +1888,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (s.autoLang || s.translateTo.isNotEmpty)
+          if (s.autoLang || s.translateTo.isNotEmpty || boost > 1.0)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
@@ -1887,6 +1897,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                   if (s.translateTo.isNotEmpty)
                     'lu en ${languageFor(s.translateTo).label}'
                         '${_lastOriginal.isNotEmpty && _translationEngine.isNotEmpty ? ' ($_translationEngine)' : ''}',
+                  if (boost > 1.0) 'voix accélérée ×${boost.toStringAsFixed(2).replaceAll('.', ',')}',
                 ].join(' · '),
                 style: theme.textTheme.labelMedium
                     ?.copyWith(color: theme.colorScheme.primary),
