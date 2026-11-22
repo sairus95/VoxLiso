@@ -48,6 +48,13 @@ const List<SubtitleLanguage> kLanguages = [
     ttsLocale: 'it-IT',
     sample: 'Ciao! Leggerò i sottotitoli ad alta voce.',
   ),
+  SubtitleLanguage(
+    code: 'en',
+    label: 'English',
+    short: 'EN',
+    ttsLocale: 'en-US',
+    sample: 'Hello! I will read the subtitles out loud.',
+  ),
 ];
 
 SubtitleLanguage languageFor(String code) =>
@@ -65,7 +72,6 @@ SubtitleLanguage? supportedLanguage(String tag) {
 /// Autres langues en alphabet latin (lisibles par la reconnaissance de texte),
 /// traduites automatiquement : nom en français.
 const Map<String, String> kOtherLanguages = {
-  'en': 'Anglais',
   'pt': 'Portugais',
   'nl': 'Néerlandais',
   'pl': 'Polonais',

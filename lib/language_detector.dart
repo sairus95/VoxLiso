@@ -11,7 +11,7 @@ import 'languages.dart';
 class LanguageDecision {
   LanguageDecision(this.current, {this.accept});
 
-  /// Langues retenues en plus de fr/de/es/it (ex. l'anglais, pour le traduire).
+  /// Langues retenues en plus de fr/de/es/it (ex. le portugais, pour le traduire).
   /// null : seulement les 4 langues lues.
   final bool Function(String code)? accept;
 

@@ -34,7 +34,7 @@ class _TutorialScreenState extends State<TutorialScreen> {
     const _Page(
       'Bienvenue dans VoxLiso',
       'VoxLiso lit à voix haute les sous-titres affichés sur votre télé ou votre '
-          "ordinateur, en français, allemand, espagnol ou italien. Tout se passe sur le "
+          "ordinateur, en français, allemand, espagnol, italien ou anglais. Tout se passe sur le "
           'téléphone, sans internet.',
       _Picture.welcome,
     ),
@@ -352,11 +352,11 @@ class _TutorialPainter extends CustomPainter {
               ..color = Colors.white
               ..strokeWidth = s * 0.01);
       case _Picture.language:
-        const labels = ['Auto', 'FR', 'DE', 'ES', 'IT'];
-        final w = s * 0.17;
+        const labels = ['Auto', 'FR', 'DE', 'ES', 'IT', 'EN'];
+        final w = s * 0.145;
         for (var i = 0; i < labels.length; i++) {
           final rect = Rect.fromCenter(
-              center: Offset(c.dx + (i - 2) * (w + s * 0.02), c.dy),
+              center: Offset(c.dx + (i - 2.5) * (w + s * 0.015), c.dy),
               width: w,
               height: s * 0.14);
           final rr = RRect.fromRectAndRadius(rect, Radius.circular(s * 0.04));

@@ -99,7 +99,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _tracker = SubtitleTracker(stableFrames: s.stableFrames);
-    // Mode Auto : les autres langues en alphabet latin (anglais, portugais…)
+    // Mode Auto : les autres langues en alphabet latin (portugais, néerlandais…)
     // sont aussi reconnues, pour être traduites.
     _langDetector = LanguageDetector(
       s.detectedLang,
@@ -677,7 +677,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     var out = segments;
     String? warning;
     // Langue de lecture : celle choisie dans « Traduction » ; sinon, une langue
-    // autre que fr/de/es/it (anglais, portugais…) est traduite automatiquement.
+    // autre que fr/de/es/it/en (portugais, néerlandais…) est traduite automatiquement.
     var target = s.translateTo;
     if (target.isEmpty && !isReadLanguage(lang)) target = s.autoTranslateTo;
     if (target.isNotEmpty && target != lang) {
@@ -701,7 +701,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     if (_closed || !_reading) return;
 
-    // Langue lue par une voix (fr/de/es/it) : sa voix ; autre langue non
+    // Langue lue par une voix (fr/de/es/it/en) : sa voix ; autre langue non
     // traduite : la voix du téléphone pour cette langue, si elle existe.
     final locale = isReadLanguage(speakLang) ? languageFor(speakLang).ttsLocale : speakLang;
     final first = _primaryVoice(speakLang);
