@@ -180,6 +180,11 @@ class AppSettings {
   /// Clé DeepL à utiliser : celle saisie dans les réglages, sinon la clé intégrée.
   String get effectiveDeeplKey => deeplKey.isNotEmpty ? deeplKey : builtInDeeplKey;
 
+  /// Zone miroir : si rien n'est lu dans la zone, lire aussi la même bande de
+  /// l'autre côté de l'image (sous-titres placés en haut).
+  bool get topSubtitles => _prefs.getBool('topSubtitles') ?? true;
+  set topSubtitles(bool v) => _prefs.setBool('topSubtitles', v);
+
   /// Mise à jour en cours de téléchargement (gestionnaire d'Android) : numéro et version.
   int get updateDownloadId => _prefs.getInt('updateDownloadId') ?? -1;
   set updateDownloadId(int v) => _prefs.setInt('updateDownloadId', v);

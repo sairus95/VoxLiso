@@ -709,6 +709,16 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
+          title: const Text('Sous-titres en haut de l\'image'),
+          subtitle: const Text(
+              'Quand rien n\'est lu dans la zone, VoxLiso lit aussi la même bande de l\'autre '
+              'côté de l\'image (cadre en pointillés) : sous-titres placés en haut quand le bas '
+              'est pris par un texte, un nom ou un générique. En mode écran : en plein écran.'),
+          value: s.topSubtitles,
+          onChanged: (v) => setState(() => s.topSubtitles = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
           title: const Text('Lecture renforcée'),
           subtitle: const Text(
               'Pendant la lecture, chaque image est relue une 2e fois sur la zone recadrée, '

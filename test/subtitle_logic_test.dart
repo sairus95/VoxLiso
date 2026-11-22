@@ -15,6 +15,7 @@ import 'package:voxliso/updater.dart';
 import 'package:voxliso/text_tools.dart';
 import 'package:voxliso/translator.dart';
 import 'package:voxliso/voices.dart';
+import 'package:voxliso/zones.dart';
 
 void main() {
   group('cleanSubtitle', () {
@@ -517,6 +518,27 @@ void main() {
           contains('Quota'));
       expect(SubtitleTranslator.azureErrorMessage(429, ''), contains('surchargé'));
       expect(SubtitleTranslator.azureErrorMessage(500, 'oops'), 'Azure a répondu 500.');
+    });
+  });
+
+  group('Zone miroir', () {
+    test('zone en bas : miroir en haut', () {
+      final m = mirrorBand(0.62, 0.95)!;
+      expect(m.$1, closeTo(0.05, 1e-9));
+      expect(m.$2, closeTo(0.38, 1e-9));
+    });
+    test('zone en haut : miroir en bas', () {
+      final m = mirrorBand(0.05, 0.40)!;
+      expect(m.$1, closeTo(0.60, 1e-9));
+      expect(m.$2, closeTo(0.95, 1e-9));
+    });
+    test('ne chevauche jamais la zone', () {
+      final m = mirrorBand(0.30, 0.95)!;
+      expect(m.$1, closeTo(0.05, 1e-9));
+      expect(m.$2, closeTo(0.28, 1e-9));
+    });
+    test('pas de miroir pour une zone qui prend presque toute la hauteur', () {
+      expect(mirrorBand(0.05, 0.95), isNull);
     });
   });
 }
