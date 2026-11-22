@@ -96,7 +96,7 @@ void main() {
 
     test('ignore les langues non prises en charge', () {
       final d = LanguageDecision('it');
-      expect(d.update('Esta é uma frase em português.', {'pt': 0.98}), 'it');
+      expect(d.update('Dit is een Nederlandse zin hier.', {'nl': 0.98}), 'it');
     });
 
     test('lit l\'anglais directement', () {
@@ -104,9 +104,14 @@ void main() {
       expect(d.update('This is an English sentence here.', {'en': 0.98}), 'en');
     });
 
-    test('reconnaît une autre langue à traduire (portugais)', () {
-      final d = LanguageDecision('fr', accept: (c) => kOtherLanguages.containsKey(c));
+    test('lit le portugais directement', () {
+      final d = LanguageDecision('fr');
       expect(d.update('Esta é uma frase em português.', {'pt': 0.98}), 'pt');
+    });
+
+    test('reconnaît une autre langue à traduire (néerlandais)', () {
+      final d = LanguageDecision('fr', accept: (c) => kOtherLanguages.containsKey(c));
+      expect(d.update('Dit is een Nederlandse zin hier.', {'nl': 0.98}), 'nl');
       expect(d.update('Où est la gare, s\'il vous plaît ?', {'fr': 0.97}), 'fr');
     });
 

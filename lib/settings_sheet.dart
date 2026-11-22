@@ -417,7 +417,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
         initialValue: s.autoTranslateTo,
         isExpanded: true,
         decoration: const InputDecoration(
-          labelText: 'Sous-titres en portugais, néerlandais… : traduire en',
+          labelText: 'Sous-titres en néerlandais, polonais… : traduire en',
         ),
         items: [
           for (final l in kLanguages) DropdownMenuItem(value: l.code, child: Text(l.label)),
@@ -426,7 +426,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
       ),
       const SizedBox(height: 4),
       Text(
-        'En mode Auto, VoxLiso reconnaît aussi le portugais, le néerlandais, '
+        'En mode Auto, VoxLiso reconnaît aussi le néerlandais, le roumain, '
         'le polonais… et les traduit automatiquement. La langue nécessaire se télécharge '
         'toute seule en Wi-Fi au premier besoin (environ 30 Mo). Avec une clé DeepL, la '
         'traduction est immédiate et de meilleure qualité.',

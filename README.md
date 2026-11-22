@@ -4,7 +4,7 @@ Application **Android et iPhone** qui lit à voix haute les sous-titres affiché
 
 On pointe la caméra du téléphone vers l'écran, on place la bande jaune sur les sous-titres, on appuie sur **« Lire les sous-titres »**, et le téléphone les dit à voix haute au fur et à mesure.
 
-Langues : **français, allemand, espagnol, italien, anglais**.
+Langues : **français, allemand, espagnol, italien, anglais, portugais**.
 
 ---
 
@@ -30,7 +30,7 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 ### Réglages disponibles
 | Réglage | Effet |
 |---|---|
-| Langue (Auto / FR / DE / ES / IT / EN) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Les sous-titres dans une **autre langue** (portugais, néerlandais, polonais…) sont **traduits automatiquement** (en français par défaut ; langue téléchargée en Wi-Fi au premier besoin, ou DeepL). Sinon, la langue choisie est imposée. |
+| Langue (Auto / FR / DE / ES / IT / EN / PT) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Les sous-titres dans une **autre langue** (néerlandais, polonais, roumain…) sont **traduits automatiquement** (en français par défaut ; langue téléchargée en Wi-Fi au premier besoin, ou DeepL). Sinon, la langue choisie est imposée. |
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
 | Zone centrée | La zone de lecture est un rectangle centré (15–85 % de la largeur par défaut) : le texte des côtés (logos, heure, décor) est ignoré. Poignées jaunes sur les 4 côtés. |
 | Vue 16:9 | Par défaut, l'aperçu est au format des télés (16:9), téléphone debout comme couché. Debout, il montre la bande centrale de l'image ; seul le texte visible est lu. Désactivable dans les réglages (vue 9:16). |
@@ -38,7 +38,7 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 | Luminosité | À baisser si l'écran de la télé apparaît « brûlé » (blanc) sur l'aperçu. |
 | Voix | **Moteur de voix** au choix sur Android (Google, Samsung…), bouton **Installer d'autres voix**, **hauteur** réglable (grave / aiguë) pour chaque voix. Par langue : voix principale et voix du 2e personnage, à écouter avec ▶. Sur iPhone, nom, homme/femme et voix « améliorées » ; sur Android, qualité seulement (écouter pour choisir). Par défaut : la voix la plus naturelle installée. |
 | Une voix par personnage | Dans les dialogues à tirets, la 2e réplique est lue avec une autre voix (ou plus grave s'il n'y en a qu'une). |
-| Traduction | Lire les sous-titres traduits en français, allemand, espagnol, italien ou anglais, sur le téléphone. Chaque langue se télécharge une fois (≈30 Mo), ensuite sans internet. **Option DeepL** : avec une clé gratuite « DeepL API Free » (500 000 caractères/mois), traduction en ligne de meilleure qualité, retour automatique au hors ligne sans réseau. |
+| Traduction | Lire les sous-titres traduits en français, allemand, espagnol, italien, anglais ou portugais, sur le téléphone. Chaque langue se télécharge une fois (≈30 Mo), ensuite sans internet. **Option DeepL** : avec une clé gratuite « DeepL API Free » (500 000 caractères/mois), traduction en ligne de meilleure qualité, retour automatique au hors ligne sans réseau. |
 | Vitesse de la voix | De x0,5 à x2. |
 | Réactivité | Rapide / Normale / Stable (Stable = moins d'erreurs si le téléphone bouge). |
 | Mode photo | Analyse de vraies photos au lieu de la vidéo : plus lent, mais plus fiable sur certains téléphones. |
@@ -106,7 +106,7 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 | `lib/text_tools.dart` | Nettoyage des sous-titres, comparaison de textes |
 | `lib/subtitle_tracker.dart` | Décide quand lire un sous-titre (stabilité, doublons, défilement) |
 | `lib/speech_service.dart` | Synthèse vocale et file d'attente |
-| `lib/languages.dart` | Les 5 langues lues (FR, DE, ES, IT, EN), leurs voix, et les autres langues traduites |
+| `lib/languages.dart` | Les 6 langues lues (FR, DE, ES, IT, EN, PT), leurs voix, et les autres langues traduites |
 | `lib/language_detector.dart` | Détection automatique de la langue (ML Kit Language ID) |
 | `lib/voices.dart` | Liste et classement des voix du téléphone, choix du 2e personnage |
 | `lib/translator.dart` | Traduction hors ligne (ML Kit Translation) et téléchargement des langues |
@@ -120,6 +120,6 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 | `tool/icone/`, `assets/launcher/` | Logo « Bulle-onde » (jaune #FFC93C, bleu nuit #12204A) et images générées pour Android et iOS |
 | `test/subtitle_logic_test.dart` | Tests de la logique des sous-titres |
 
-Ajouter une langue à alphabet latin (anglais, portugais…) : une ligne dans `lib/languages.dart`.
+Ajouter une langue à alphabet latin (néerlandais, polonais…) : une ligne dans `lib/languages.dart` (et la retirer de `kOtherLanguages`).
 
 Bibliothèques : `camera`, `camera_android`, `google_mlkit_text_recognition`, `google_mlkit_language_id`, `google_mlkit_translation`, `flutter_tts`, `wakelock_plus`, `shared_preferences`.

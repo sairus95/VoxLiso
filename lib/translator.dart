@@ -38,7 +38,7 @@ class SubtitleTranslator {
 
   static String _bcp(String code) => _lang(code)!.bcpCode;
 
-  static const List<String> _main = ['fr', 'de', 'es', 'it', 'en'];
+  static const List<String> _main = ['fr', 'de', 'es', 'it', 'en', 'pt'];
 
   /// Langues en cours de téléchargement automatique (Wi-Fi), pour l'afficher.
   final Set<String> autoDownloading = {};
@@ -153,8 +153,12 @@ class SubtitleTranslator {
         'text': texts,
         // DeepL écrit le norvégien « NB ».
         'source_lang': from == 'no' ? 'NB' : from.toUpperCase(),
-        // DeepL veut une variante pour l'anglais traduit.
-        'target_lang': to == 'en' ? 'EN-US' : to.toUpperCase(),
+        // DeepL veut une variante pour l'anglais et le portugais traduits.
+        'target_lang': switch (to) {
+          'en' => 'EN-US',
+          'pt' => 'PT-PT',
+          _ => to.toUpperCase(),
+        },
       }));
       final res = await req.close().timeout(const Duration(seconds: 5));
       final body = await res.transform(utf8.decoder).join();

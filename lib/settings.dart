@@ -111,7 +111,7 @@ class AppSettings {
   bool get dialogueVoices => _prefs.getBool('dialogueVoices') ?? true;
   set dialogueVoices(bool v) => _prefs.setBool('dialogueVoices', v);
 
-  /// Langue de traduction : '' = pas de traduction, sinon fr / de / es / it / en.
+  /// Langue de traduction : '' = pas de traduction, sinon fr / de / es / it / en / pt.
   String get translateTo => _prefs.getString('translateTo') ?? '';
   set translateTo(String v) => _prefs.setString('translateTo', v);
 
@@ -157,7 +157,7 @@ class AppSettings {
   bool get frame169 => _prefs.getBool('frame169') ?? true;
   set frame169(bool v) => _prefs.setBool('frame169', v);
 
-  /// Sous-titres dans une autre langue que fr/de/es/it/en (portugais, néerlandais…) :
+  /// Sous-titres dans une autre langue que fr/de/es/it/en/pt (néerlandais, polonais…) :
   /// traduits automatiquement dans cette langue (fr par défaut).
   String get autoTranslateTo => _prefs.getString('autoTranslateTo') ?? 'fr';
   set autoTranslateTo(String v) => _prefs.setString('autoTranslateTo', v);
