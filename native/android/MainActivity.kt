@@ -1,12 +1,14 @@
 package com.voxliso.voxliso
 
 import android.app.Activity
+import android.app.DownloadManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Environment
 import android.speech.tts.TextToSpeech
 import android.view.WindowManager
 import java.io.File
@@ -116,6 +118,29 @@ class MainActivity : FlutterActivity() {
                     window.attributes = lp
                     result.success(true)
                 }
+                // Mise à jour : téléchargement confié au gestionnaire de téléchargements
+                // d'Android (continue écran éteint, reprend après une coupure de réseau).
+                "startDownload" -> {
+                    val url = call.argument<String>("url")
+                    val name = call.argument<String>("name") ?: "VoxLiso.apk"
+                    val title = call.argument<String>("title") ?: "VoxLiso"
+                    result.success(if (url == null) -1L else startDownload(url, name, title))
+                }
+                "downloadStatus" -> {
+                    val id = call.argument<Number>("id")?.toLong() ?: -1L
+                    result.success(downloadStatus(id))
+                }
+                "removeDownload" -> {
+                    val id = call.argument<Number>("id")?.toLong() ?: -1L
+                    result.success(
+                        try {
+                            if (id >= 0) downloads().remove(id)
+                            true
+                        } catch (_: Exception) {
+                            false
+                        }
+                    )
+                }
                 // Mise à jour : installe l'APK téléchargé (Android demande confirmation).
                 "installApk" -> {
                     val path = call.argument<String>("path")
@@ -189,6 +214,59 @@ class MainActivity : FlutterActivity() {
         } else {
             result?.success(false)
         }
+    }
+
+    private fun downloads() = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+
+    /**
+     * Lance le téléchargement de l'APK dans le dossier de l'application
+     * (Android/data/…/files/Download), avec une notification de progression.
+     * Renvoie le numéro du téléchargement, ou -1.
+     */
+    private fun startDownload(url: String, name: String, title: String): Long {
+        return try {
+            val dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return -1L
+            // Anciens fichiers de mise à jour : inutile de les garder (≈ 130 Mo chacun).
+            dir.listFiles()?.filter { it.name.endsWith(".apk") }?.forEach { it.delete() }
+            val request = DownloadManager.Request(Uri.parse(url))
+                .setTitle(title)
+                .setDescription("Mise à jour de VoxLiso")
+                .setMimeType("application/vnd.android.package-archive")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
+                .setDestinationInExternalFilesDir(this, Environment.DIRECTORY_DOWNLOADS, name)
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(false)
+                .addRequestHeader("User-Agent", "VoxLiso")
+            downloads().enqueue(request)
+        } catch (_: Exception) {
+            -1L
+        }
+    }
+
+    /** État d'un téléchargement : status, octets reçus / total, raison, chemin du fichier. */
+    private fun downloadStatus(id: Long): Map<String, Any?> {
+        try {
+            downloads().query(DownloadManager.Query().setFilterById(id))?.use { c ->
+                if (!c.moveToFirst()) return mapOf("status" to "missing")
+                val status = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                val local = c.getString(c.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI))
+                return mapOf(
+                    "status" to when (status) {
+                        DownloadManager.STATUS_SUCCESSFUL -> "success"
+                        DownloadManager.STATUS_FAILED -> "failed"
+                        DownloadManager.STATUS_PAUSED -> "paused"
+                        DownloadManager.STATUS_PENDING -> "pending"
+                        else -> "running"
+                    },
+                    "downloaded" to c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
+                    "total" to c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
+                    "reason" to c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)),
+                    "path" to local?.let { Uri.parse(it).path },
+                )
+            }
+        } catch (_: Exception) {
+        }
+        return mapOf("status" to "missing")
     }
 
     /** Installe un APK avec PackageInstaller ; le résultat revient dans onNewIntent. */

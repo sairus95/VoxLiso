@@ -1191,6 +1191,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// Au démarrage : au plus une vérification toutes les 6 heures.
   Future<void> _autoCheckUpdate() async {
     if (!Updater.supported) return;
+    await Updater.cleanUp(s); // APK de la mise à jour déjà installée : effacé
     final now = DateTime.now().millisecondsSinceEpoch;
     if (now - s.lastUpdateCheck < const Duration(hours: 6).inMilliseconds) return;
     try {
@@ -1217,29 +1218,65 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
   }
 
+  /// Téléchargement de mise à jour en cours (une seule fois à la fois).
+  bool _updating = false;
+
   Future<void> _runUpdate(UpdateInfo info) async {
-    final progress = ValueNotifier<double?>(null);
+    if (_updating) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Téléchargement déjà en cours : voir la notification d\'Android.')));
+      return;
+    }
+    _updating = true;
+    try {
+      await _downloadAndInstall(info);
+    } finally {
+      _updating = false;
+    }
+  }
+
+  Future<void> _downloadAndInstall(UpdateInfo info) async {
+    final progress = ValueNotifier<(double?, String)>((null, 'Téléchargement…'));
+    var dialogOpen = true;
     showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: Text('Mise à jour vers ${info.version}'),
-        content: ValueListenableBuilder<double?>(
+        content: ValueListenableBuilder<(double?, String)>(
           valueListenable: progress,
-          builder: (context, p, child) => Column(mainAxisSize: MainAxisSize.min, children: [
-            LinearProgressIndicator(value: p),
+          builder: (context, v, child) => Column(mainAxisSize: MainAxisSize.min, children: [
+            LinearProgressIndicator(value: v.$1),
             const SizedBox(height: 12),
-            Text(p == null ? 'Téléchargement…' : 'Téléchargement : ${(p * 100).round()} %'),
+            Text(v.$2),
+            const SizedBox(height: 8),
+            Text(
+              'Le téléchargement continue écran éteint ou si vous quittez VoxLiso '
+              '(progression dans les notifications).',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ]),
         ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              dialogOpen = false;
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Masquer'),
+          ),
+        ],
       ),
-    );
+    ).then((_) => dialogOpen = false);
     String? path;
     try {
-      path = await Updater.download(info, (p) => progress.value = p);
+      path = await Updater.download(info, s, (p, text) => progress.value = (p, text));
     } catch (_) {}
     if (!mounted) return;
-    Navigator.of(context, rootNavigator: true).pop();
+    if (dialogOpen) {
+      dialogOpen = false;
+      Navigator.of(context, rootNavigator: true).pop();
+    }
     final messenger = ScaffoldMessenger.of(context);
     final browser = SnackBarAction(
       label: 'Navigateur',
@@ -1252,6 +1289,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       ));
       return;
     }
+    // Android demande de confirmer l'installation : seulement avec VoxLiso à l'écran
+    // (si le téléchargement s'est fini écran éteint, on attend le retour dans l'application).
+    await _untilVisible();
+    if (!mounted) return;
     final ok = await Updater.install(path);
     if (!mounted) return;
     setState(() => _update = null);
@@ -1263,6 +1304,17 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           : 'Installation impossible depuis VoxLiso : ouvrez le fichier dans le navigateur.'),
       action: ok ? null : browser,
     ));
+  }
+
+  /// Attend que VoxLiso soit au premier plan, écran allumé.
+  Future<void> _untilVisible() async {
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) return;
+    final done = Completer<void>();
+    final listener = AppLifecycleListener(onResume: () {
+      if (!done.isCompleted) done.complete();
+    });
+    await done.future;
+    listener.dispose();
   }
 
   Widget _buildUpdateBanner(UpdateInfo info) => MaterialBanner(

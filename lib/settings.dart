@@ -180,6 +180,12 @@ class AppSettings {
   /// Clé DeepL à utiliser : celle saisie dans les réglages, sinon la clé intégrée.
   String get effectiveDeeplKey => deeplKey.isNotEmpty ? deeplKey : builtInDeeplKey;
 
+  /// Mise à jour en cours de téléchargement (gestionnaire d'Android) : numéro et version.
+  int get updateDownloadId => _prefs.getInt('updateDownloadId') ?? -1;
+  set updateDownloadId(int v) => _prefs.setInt('updateDownloadId', v);
+  String get updateDownloadVersion => _prefs.getString('updateDownloadVersion') ?? '';
+  set updateDownloadVersion(String v) => _prefs.setString('updateDownloadVersion', v);
+
   /// Microsoft Azure Translator : clé et région saisies dans les réglages.
   String get azureKey => _prefs.getString('azureKey') ?? '';
   set azureKey(String v) => _prefs.setString('azureKey', v.trim());

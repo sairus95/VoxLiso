@@ -48,6 +48,37 @@ class SystemBridge {
     } catch (_) {}
   }
 
+  /// Mise à jour : confie le téléchargement de [url] au gestionnaire de
+  /// téléchargements d'Android. Renvoie son numéro, ou -1.
+  static Future<int> startDownload(String url, String name, String title) async {
+    if (!Platform.isAndroid) return -1;
+    try {
+      return await _channel.invokeMethod<int>(
+              'startDownload', {'url': url, 'name': name, 'title': title}) ??
+          -1;
+    } catch (_) {
+      return -1;
+    }
+  }
+
+  /// État d'un téléchargement : status (running, paused, pending, success,
+  /// failed, missing), downloaded, total, reason, path.
+  static Future<Map<String, dynamic>> downloadStatus(int id) async {
+    try {
+      final m = await _channel.invokeMethod<Map<dynamic, dynamic>>('downloadStatus', {'id': id});
+      return m == null ? const {'status': 'missing'} : m.cast<String, dynamic>();
+    } catch (_) {
+      return const {'status': 'missing'};
+    }
+  }
+
+  /// Annule un téléchargement ou efface son fichier.
+  static Future<void> removeDownload(int id) async {
+    try {
+      await _channel.invokeMethod<bool>('removeDownload', {'id': id});
+    } catch (_) {}
+  }
+
   /// Installe un APK téléchargé (mise à jour) ; Android demande confirmation.
   static Future<bool> installApk(String path) async {
     if (!Platform.isAndroid) return false;

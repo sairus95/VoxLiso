@@ -2,8 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'settings.dart';
 import 'system_bridge.dart';
 import 'version.dart';
+
+/// Progression d'un téléchargement : fraction (null si inconnue) et texte à afficher.
+typedef DownloadProgress = void Function(double? progress, String status);
 
 /// Une version publiée sur GitHub.
 class UpdateInfo {
@@ -81,8 +85,85 @@ class Updater {
     }
   }
 
-  /// Télécharge l'APK (progression de 0 à 1) et renvoie son chemin.
-  static Future<String> download(UpdateInfo info, void Function(double progress) onProgress) async {
+  /// Télécharge l'APK et renvoie son chemin. Le téléchargement est confié au
+  /// gestionnaire de téléchargements d'Android : il continue écran éteint ou
+  /// VoxLiso fermé, reprend après une coupure de réseau et s'affiche dans les
+  /// notifications. Un téléchargement déjà commencé (ou fini) pour la même
+  /// version est repris au lieu d'être relancé.
+  static Future<String> download(UpdateInfo info, AppSettings s, DownloadProgress onProgress) async {
+    var id = s.updateDownloadVersion == info.version ? s.updateDownloadId : -1;
+    if (id >= 0) {
+      final status = (await SystemBridge.downloadStatus(id))['status'];
+      if (status == 'missing' || status == 'failed') id = -1;
+    }
+    if (id < 0) {
+      id = await SystemBridge.startDownload(
+          info.url, 'VoxLiso-${info.version}.apk', 'VoxLiso ${info.version}');
+      if (id < 0) {
+        // Gestionnaire de téléchargements indisponible : téléchargement par VoxLiso.
+        return _directDownload(info, (p) => onProgress(p, progressText(p)));
+      }
+      s.updateDownloadId = id;
+      s.updateDownloadVersion = info.version;
+    }
+    while (true) {
+      final st = await SystemBridge.downloadStatus(id);
+      final done = (st['downloaded'] as num?)?.toInt() ?? 0;
+      var total = (st['total'] as num?)?.toInt() ?? 0;
+      if (total <= 0) total = info.size;
+      final p = total > 0 ? (done / total).clamp(0.0, 1.0).toDouble() : null;
+      switch (st['status']) {
+        case 'success':
+          final path = st['path'] as String?;
+          if (path != null && File(path).existsSync()) {
+            onProgress(1, 'Téléchargement terminé');
+            return path;
+          }
+          s.updateDownloadId = -1;
+          throw const FileSystemException('Fichier de mise à jour introuvable');
+        case 'failed':
+          s.updateDownloadId = -1;
+          throw HttpException('Téléchargement échoué (${st['reason']})');
+        case 'missing':
+          // Annulé depuis la notification, par exemple.
+          s.updateDownloadId = -1;
+          throw const HttpException('Téléchargement annulé');
+        case 'paused':
+          onProgress(p, pausedText((st['reason'] as num?)?.toInt()));
+        case 'pending':
+          onProgress(p, 'En attente…');
+        default:
+          onProgress(p, progressText(p));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+    }
+  }
+
+  static String progressText(double? p) =>
+      p == null ? 'Téléchargement…' : 'Téléchargement : ${(p * 100).round()} %';
+
+  /// Raison d'une pause du gestionnaire de téléchargements d'Android.
+  static String pausedText(int? reason) => switch (reason) {
+        1 => 'Coupure : nouvel essai dans un instant…', // PAUSED_WAITING_TO_RETRY
+        2 => 'En attente du réseau…', // PAUSED_WAITING_FOR_NETWORK
+        3 => 'En attente du Wi-Fi…', // PAUSED_QUEUED_FOR_WIFI
+        _ => 'En pause…',
+      };
+
+  /// Après la mise à jour : efface l'APK téléchargé (≈ 130 Mo) une fois la
+  /// nouvelle version installée.
+  static Future<void> cleanUp(AppSettings s) async {
+    final v = s.updateDownloadVersion;
+    if (v.isEmpty) return;
+    if (isNewer(v, kAppVersion)) return; // pas encore installée
+    if (s.updateDownloadId >= 0) await SystemBridge.removeDownload(s.updateDownloadId);
+    s.updateDownloadId = -1;
+    s.updateDownloadVersion = '';
+  }
+
+  /// Téléchargement par VoxLiso lui-même (si Android n'a pas de gestionnaire
+  /// de téléchargements) : s'arrête si le téléphone se met en veille.
+  static Future<String> _directDownload(UpdateInfo info, void Function(double progress) onProgress) async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
       final req = await client.getUrl(Uri.parse(info.url));
