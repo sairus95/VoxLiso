@@ -161,8 +161,15 @@ class _SettingsSheetState extends State<SettingsSheet> {
     ];
   }
 
-  String _plusFeatures({bool capital = false}) =>
-      '${capital ? 'T' : 't'}raduction${Platform.isAndroid ? ' et lecture de l\'écran du téléphone' : ''}';
+  String _plusFeatures({bool capital = false}) {
+    final list = [
+      'traduction',
+      'écran noir pendant la lecture',
+      if (Platform.isAndroid) 'lecture de l\'écran du téléphone',
+    ];
+    final text = '${list.sublist(0, list.length - 1).join(', ')} et ${list.last}';
+    return capital ? '${text[0].toUpperCase()}${text.substring(1)}' : text;
+  }
 
   // --------------------------------------------------------- accessibilité
 
@@ -658,16 +665,26 @@ class _SettingsSheetState extends State<SettingsSheet> {
           value: s.ignoreStatic,
           onChanged: (v) => setState(() => s.ignoreStatic = v),
         ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Écran noir pendant la lecture'),
-          subtitle: const Text(
-              'En option : pendant la lecture, après 8 secondes sans toucher l\'écran, il passe '
-              'au noir pour ne pas gêner dans le noir et économiser la batterie. '
-              'Touchez-le pour le rallumer.'),
-          value: s.blackScreen,
-          onChanged: (v) => setState(() => s.blackScreen = v),
-        ),
+        if (!Premium.instance.has(PlusFeature.blackScreen))
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Écran noir pendant la lecture'),
+            subtitle: const Text('Avec VoxLiso Plus : après 8 secondes sans toucher le '
+                'téléphone, l\'écran passe au noir pour ne pas gêner et économiser la batterie.'),
+            trailing: Icon(Icons.lock_outline, color: theme.colorScheme.primary),
+            onTap: () => openPlusScreen(context, reason: PlusFeature.blackScreen),
+          )
+        else
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Écran noir pendant la lecture'),
+            subtitle: const Text(
+                'En option : pendant la lecture, après 8 secondes sans toucher l\'écran, il passe '
+                'au noir pour ne pas gêner dans le noir et économiser la batterie. '
+                'Touchez-le pour le rallumer.'),
+            value: s.blackScreen,
+            onChanged: (v) => setState(() => s.blackScreen = v),
+          ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Mode photo'),

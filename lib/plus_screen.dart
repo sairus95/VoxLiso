@@ -60,7 +60,11 @@ class PlusScreen extends StatelessWidget {
                   Card(
                     child: ListTile(
                       leading: Icon(
-                        f == PlusFeature.translation ? Icons.translate : Icons.smartphone,
+                        switch (f) {
+                          PlusFeature.translation => Icons.translate,
+                          PlusFeature.screen => Icons.smartphone,
+                          PlusFeature.blackScreen => Icons.dark_mode,
+                        },
                         color: kBrandYellow,
                         size: 32,
                       ),

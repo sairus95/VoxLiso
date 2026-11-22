@@ -14,7 +14,10 @@ enum PlusFeature {
   translation('Traduction des sous-titres',
       'Lire les sous-titres traduits dans une autre langue, sur le téléphone ou avec DeepL.'),
   screen('Lecture de l\'écran du téléphone',
-      'Lire les sous-titres des vidéos regardées sur ce téléphone (YouTube, navigateur…).');
+      'Lire les sous-titres des vidéos regardées sur ce téléphone (YouTube, navigateur…).'),
+  blackScreen('Écran noir pendant la lecture',
+      'Après 8 secondes sans toucher le téléphone, l\'écran passe au noir : il ne gêne pas '
+          'dans le noir et la batterie dure plus longtemps. Un toucher le rallume.');
 
   const PlusFeature(this.title, this.description);
   final String title;

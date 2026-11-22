@@ -89,6 +89,9 @@ jobs:
             echo "keyPassword=$RELEASE_PASSWORD"
             echo "keyAlias=${RELEASE_ALIAS:-upload}"
           } > android/key.properties
+          # Google Play n'autorise pas une application à installer ses propres mises à jour :
+          # permission retirée du paquet boutique (mise à jour intégrée inactive avec STORE_BUILD).
+          sed -i '/android.permission.REQUEST_INSTALL_PACKAGES/d' android/app/src/main/AndroidManifest.xml
           flutter build appbundle --release \
             --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} \
             --dart-define=APP_VERSION=1.0.${{ github.run_number }} \

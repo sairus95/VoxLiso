@@ -1063,12 +1063,15 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   // ------------------------------------------------------- écran noir
 
+  /// Écran noir activé dans les réglages (fonction VoxLiso Plus).
+  bool get _blackScreenOn => s.blackScreen && Premium.instance.has(PlusFeature.blackScreen);
+
   /// Programme l'écran noir après quelques secondes sans toucher l'écran.
   void _scheduleDim() {
     _dimTimer?.cancel();
-    if (!_reading || !s.blackScreen || s.screenSource) return;
+    if (!_reading || !_blackScreenOn || s.screenSource) return;
     _dimTimer = Timer(_dimDelay, () {
-      if (!mounted || _closed || !_reading || !s.blackScreen) return;
+      if (!mounted || _closed || !_reading || !_blackScreenOn) return;
       setState(() => _dimmed = true);
       SystemBridge.setBrightness(0.01);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);

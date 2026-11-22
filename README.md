@@ -36,7 +36,7 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 | Sous-titres difficiles | Quand rien n'est lu dans la zone, VoxLiso la relit recadrée, contrastée (niveaux étirés) et agrandie (jusqu'à 1600 px). |
 | Correction | Mots mal lus corrigés avec un dictionnaire par langue (confusions « rn »/« m », « 1 »/« l »…, accents oubliés). Listes : FrequencyWords (Hermit Dave), corpus OpenSubtitles2018, CC BY-SA 4.0 — voir `assets/dict/LICENCE.md`. |
 | Texte fixe ignoré | Un texte qui ne change pas pendant plus de 20 s (logo de chaîne, heure, menu) n'est pas lu ; il est encadré en gris. |
-| Écran noir | En option (désactivé par défaut) : pendant la lecture (caméra), après 8 s sans toucher l'écran, il passe au noir (luminosité au minimum sur Android) ; le toucher le rallume. |
+| Écran noir | VoxLiso Plus, en option (désactivé par défaut) : pendant la lecture (caméra), après 8 s sans toucher l'écran, il passe au noir (luminosité au minimum sur Android) ; le toucher le rallume. |
 | Mises à jour | Android : VoxLiso vérifie les nouvelles versions sur GitHub (au plus toutes les 6 h) et propose « Mettre à jour » : téléchargement puis installation après confirmation. Bouton « Rechercher une mise à jour » dans les réglages. |
 | Zone centrée | La zone de lecture est un rectangle centré (15–85 % de la largeur par défaut) : le texte des côtés (logos, heure, décor) est ignoré. Poignées jaunes sur les 4 côtés. |
 | Vue 16:9 | Par défaut, l'aperçu est au format des télés (16:9), téléphone debout comme couché. Debout, il montre la bande centrale de l'image ; seul le texte visible est lu. Désactivable dans les réglages (vue 9:16). |
@@ -88,13 +88,14 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 
 ## VoxLiso Plus et publication dans les boutiques
 
-**VoxLiso Plus** est un achat unique (sans abonnement) qui débloque la **traduction** et la **lecture de l'écran du téléphone**. La lecture des sous-titres avec la caméra reste gratuite.
+**VoxLiso Plus** est un achat unique (sans abonnement) qui débloque la **traduction**, l'**écran noir pendant la lecture** et la **lecture de l'écran du téléphone**. La lecture des sous-titres avec la caméra reste gratuite.
 
 - Seule la **version des boutiques** (compilée avec `--dart-define=STORE_BUILD=true`) demande l'achat. L'APK publié sur GitHub et les compilations sur l'ordinateur ont toutes les fonctions débloquées.
 - Produit à créer, avec l'identifiant **`voxliso_plus`** (produit **non consommable**) :
   - Play Console > Monétiser > Produits > Produits intégrés ;
   - App Store Connect > l'app > Achats intégrés > « Non consommable ».
 - Code : `lib/premium.dart` (achat, restauration, mémorisation) et `lib/plus_screen.dart` (écran VoxLiso Plus).
+- Le paquet boutique (`.aab`) est compilé sans la permission `REQUEST_INSTALL_PACKAGES` : la mise à jour depuis l'application n'existe que dans l'APK GitHub.
 
 ### Clé d'envoi Google Play
 GitHub Actions produit aussi **`voxliso-play-store`** (fichier `.aab` à envoyer dans la Play Console), signé avec la clé d'envoi, si ces secrets existent (Settings > Secrets and variables > Actions) :
