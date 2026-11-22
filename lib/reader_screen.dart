@@ -17,6 +17,7 @@ import 'premium.dart';
 import 'language_detector.dart';
 import 'languages.dart';
 import 'roi_overlay.dart';
+import 'reading_vote.dart';
 import 'screen_capture.dart';
 import 'sentence_joiner.dart';
 import 'settings.dart';
@@ -142,7 +143,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _tracker = SubtitleTracker(stableFrames: s.stableFrames);
+    _tracker = SubtitleTracker(stableFrames: s.stableFrames)
+      // Dictionnaire de la langue lue : départage les lectures (« raisori » / « raison »).
+      ..dictionary = () {
+        final lang = s.autoLang ? _langDetector.current : s.lang;
+        final list = _spell.loaded(lang);
+        if (list == null) _spell.load(lang);
+        return list;
+      };
     // Mode Auto : les autres langues en alphabet latin (néerlandais, polonais…)
     // sont aussi reconnues, pour être traduites.
     _langDetector = LanguageDetector(
@@ -414,20 +422,51 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     if (_closed || !mounted) return;
     final ms = DateTime.now().difference(started).inMilliseconds;
-    // Image renforcée : seulement pendant la lecture, si rien n'est lu dans la zone.
+    // Image renforcée, pendant la lecture : chaque image est relue une 2e fois sur
+    // la zone agrandie et contrastée, et les deux lectures sont comparées mot à mot.
     final enhance = s.enhance && _reading;
     final found = _handleResult(result, frame.uprightSize, info, ms, feedTracker: !enhance);
     if (!enhance) return;
+    final second = await _enhancedPass(image, cam, showBoxes: found.inZone.isEmpty);
+    if (_closed || !mounted) return;
     if (found.inZone.isNotEmpty) {
-      _onLines(found.inZone.map((l) => l.text).toList());
+      _onLines(
+        found.inZone.map((l) => l.text).toList(),
+        confidence: _confidenceOf(found.inZone),
+        alternative: second == null || second.isEmpty
+            ? null
+            : OcrReading(_keyed(second.map((l) => l.text).toList()),
+                confidence: _confidenceOf(second)),
+      );
     } else {
-      await _enhancedPass(image, cam);
+      // Rien dans la zone sur l'image normale : la lecture renforcée seule.
+      final lines = second ?? const <TextLine>[];
+      _onLines(lines.map((l) => l.text).toList(), confidence: _confidenceOf(lines));
     }
+  }
+
+  /// Confiance de ML Kit pour chaque mot (Android ; rien sur iPhone).
+  static Map<String, double> _confidenceOf(Iterable<TextLine> lines) {
+    final out = <String, double>{};
+    for (final line in lines) {
+      for (final e in line.elements) {
+        final c = e.confidence;
+        if (c == null) continue;
+        final key = normalizeForCompare(e.text);
+        if (key.isEmpty) continue;
+        final prev = out[key];
+        if (prev == null || c > prev) out[key] = c;
+      }
+    }
+    return out;
   }
 
   /// 2e lecture de la zone seule, recadrée, contrastée et agrandie : pour les
   /// sous-titres pâles, à contour, lointains ou avec des reflets.
-  Future<void> _enhancedPass(CameraImage image, CameraDescription cam) async {
+  /// Renvoie les lignes lues dans la zone (null si l'image n'a pas pu être lue).
+  /// [showBoxes] : afficher ses cadres (quand l'image normale n'a rien trouvé).
+  Future<List<TextLine>?> _enhancedPass(CameraImage image, CameraDescription cam,
+      {required bool showBoxes}) async {
     final crop = _crop;
     final zone = Rect.fromLTRB(
       crop.ox + s.roiLeft * crop.vw,
@@ -436,18 +475,16 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       crop.oy + _roiBottom * crop.vh,
     );
     final e = buildEnhancedInput(image, cam, _orientation, zone);
-    if (e == null) {
-      _onLines(const []);
-      return;
-    }
+    if (e == null) return null;
     final RecognizedText result;
+    final started = DateTime.now();
     try {
       result = await _recognizer.processImage(e.image);
     } catch (_) {
-      _onLines(const []);
-      return;
+      return null;
     }
-    if (_closed || !mounted) return;
+    if (_closed || !mounted) return null;
+    final ms = DateTime.now().difference(started).inMilliseconds;
     final found = <(TextLine, Rect)>[];
     for (final block in result.blocks) {
       for (final line in block.lines) {
@@ -475,18 +512,18 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           (r.right - crop.ox) / crop.vw,
           (r.bottom - crop.oy) / crop.vh,
         );
-    if (found.isNotEmpty) {
-      setState(() {
+    setState(() {
+      if (showBoxes) {
         _boxes = [
           ..._boxes,
           for (var i = 0; i < found.length; i++)
             DetectedBox(toDisplay(found[i].$2), !fixedIdx.contains(i),
                 fixed: fixedIdx.contains(i)),
         ];
-        _diag = '$_diag\nImage renforcée : ${kept.length} ligne(s) lue(s)';
-      });
-    }
-    _onLines([for (final k in kept) k.$1.text]);
+      }
+      _diag = '$_diag\nImage renforcée : ${kept.length} ligne(s) lue(s) · ${ms}ms';
+    });
+    return [for (final k in kept) k.$1];
   }
 
   /// Exploite le résultat de l'OCR (flux vidéo ou photo) : cadres, diagnostic, lecture.
@@ -566,25 +603,47 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Repérage automatique : toutes les lignes visibles, avec leur position.
     _locator?.add([for (final l in all) SeenLine(l.text, frac(l.boundingBox))]);
 
-    if (_reading && feedTracker) _onLines(lines.map((l) => l.text).toList());
+    if (_reading && feedTracker) {
+      _onLines(lines.map((l) => l.text).toList(), confidence: _confidenceOf(lines));
+    }
     return (all: all, inZone: lines);
   }
 
-  /// Lignes retenues dans la bande (caméra ou écran) -> sous-titre à dire.
-  void _onLines(List<String> lineTexts) {
+  /// Lignes lues -> texte suivi d'une image à l'autre : répliques séparées par
+  /// [kPartSep], précédé de [kPartSep] si le sous-titre commence par un tiret.
+  String _keyed(List<String> lineTexts) {
     final parts = subtitleParts(lineTexts, removeSoundTags: s.removeSoundTags);
+    final firstLine =
+        lineTexts.map((l) => l.trim()).firstWhere((l) => l.isNotEmpty, orElse: () => '');
+    return joinParts(parts, dialogueStart: RegExp(r'^[-–—]').hasMatch(firstLine));
+  }
+
+  /// Lignes retenues dans la bande (caméra ou écran) -> sous-titre à dire.
+  /// [confidence] : confiance de ML Kit par mot ; [alternative] : 2e lecture
+  /// de la même image (image renforcée), comparée mot à mot à la première.
+  void _onLines(List<String> lineTexts,
+      {Map<String, double> confidence = const {}, OcrReading? alternative}) {
+    final toSay = _tracker.push(
+      _keyed(lineTexts),
+      confidence: confidence,
+      alternatives: [if (alternative != null) alternative],
+    );
+    if (toSay == null) return;
+    final parts = splitParts(toSay);
+    if (parts.isEmpty) return;
     final text = parts.join(' ');
-    final toSay = _tracker.push(text);
-    if (toSay == null || toSay.trim().isEmpty) return;
     // Répliques séparées seulement si tout le sous-titre est nouveau
     // (pas pour la fin d'un sous-titre « en direct » qui défile).
-    final segments = s.dialogueVoices && parts.length > 1 && toSay == text ? parts : [toSay];
+    final full = _tracker.lastWasFull;
+    final segments = s.dialogueVoices && parts.length > 1 && full ? parts : [text];
     // Un sous-titre qui commence par un tiret ouvre une nouvelle réplique :
     // ce n'est jamais la suite de la phrase précédente.
-    final firstLine = lineTexts.map((l) => l.trim()).firstWhere((l) => l.isNotEmpty, orElse: () => '');
-    final dialogueStart = toSay == text && RegExp(r'^[-–—]').hasMatch(firstLine);
+    final dialogueStart = full && startsWithDialogue(toSay);
+    // Langue reconnue sur le sous-titre entier, même si seule sa fin est dite.
+    final whole = full ? text : splitParts(_tracker.lastFull).join(' ');
     _speakChain = _speakChain
-        .then((_) => _speakSubtitle(text, segments, dialogueStart: dialogueStart))
+        .then((_) => _speakSubtitle(whole.isEmpty ? text : whole, segments,
+            dialogueStart: dialogueStart))
         .catchError((Object _) {});
   }
 

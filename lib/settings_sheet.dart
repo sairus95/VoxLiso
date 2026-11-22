@@ -638,10 +638,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
-          title: const Text('Améliorer les sous-titres difficiles'),
+          title: const Text('Lecture renforcée'),
           subtitle: const Text(
-              'Quand rien n\'est lu dans la zone, VoxLiso la relit recadrée, contrastée et '
-              'agrandie : sous-titres jaunes ou à contour, télé lointaine, reflets. '
+              'Pendant la lecture, chaque image est relue une 2e fois sur la zone recadrée, '
+              'contrastée et agrandie (sous-titres jaunes ou à contour, télé lointaine, '
+              'reflets), et les deux lectures sont comparées mot à mot pour garder la bonne. '
               'Consomme un peu plus de batterie.'),
           value: s.enhance,
           onChanged: (v) => setState(() => s.enhance = v),

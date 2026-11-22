@@ -33,7 +33,8 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 | Langue (Auto / FR / DE / ES / IT / EN / PT) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Les sous-titres dans une **autre langue** (néerlandais, polonais, roumain…) sont **traduits automatiquement** (en français par défaut ; langue téléchargée en Wi-Fi au premier besoin, ou DeepL). Sinon, la langue choisie est imposée. |
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
 | Repérer les sous-titres | Bouton qui observe l'écran quelques secondes (jusqu'à 12 s ; 30 s en mode écran du téléphone) et place la zone autour du texte qui change, en écartant le texte fixe. |
-| Sous-titres difficiles | Quand rien n'est lu dans la zone, VoxLiso la relit recadrée, contrastée (niveaux étirés) et agrandie (jusqu'à 1600 px). |
+| Lecture renforcée | Pendant la lecture, chaque image est relue une 2e fois sur la zone recadrée, contrastée (niveaux étirés) et agrandie (jusqu'à 1600 px). |
+| Lecture par vote | Un sous-titre est lu sur plusieurs images (et deux fois par image) ; les lectures sont comparées **mot à mot** et, pour chaque mot, on garde la variante la plus vue, en préférant les vrais mots de la langue (dictionnaire) et ceux que ML Kit lit avec assurance (Android). Si les lectures ne sont pas d'accord, VoxLiso attend une image de plus pour départager (le sous-titre est dit quand même s'il disparaît entre-temps). |
 | Correction | Mots mal lus corrigés avec un dictionnaire par langue (confusions « rn »/« m », « 1 »/« l »…, accents oubliés). Listes : FrequencyWords (Hermit Dave), corpus OpenSubtitles2018, CC BY-SA 4.0 — voir `assets/dict/LICENCE.md`. |
 | Texte fixe ignoré | Un texte qui ne change pas pendant plus de 20 s (logo de chaîne, heure, menu) n'est pas lu ; il est encadré en gris. |
 | Écran noir | VoxLiso Plus, en option (désactivé par défaut) : pendant la lecture (caméra), après 8 s sans toucher l'écran, il passe au noir (luminosité au minimum sur Android) ; le toucher le rallume. |
@@ -140,6 +141,7 @@ Dans la Play Console, laissez Google gérer la clé de signature de l'applicatio
 | `lib/language_detector.dart` | Détection automatique de la langue (ML Kit Language ID) |
 | `lib/voices.dart` | Liste et classement des voix du téléphone, choix du 2e personnage |
 | `lib/translator.dart` | Traduction hors ligne (ML Kit Translation) et téléchargement des langues |
+| `lib/reading_vote.dart` | Vote mot à mot entre plusieurs lectures d'un même sous-titre |
 | `lib/sentence_joiner.dart` | Repérage des phrases coupées entre deux sous-titres et réunion des morceaux avant traduction |
 | `lib/history.dart` | Historique des sous-titres lus et son écran |
 | `lib/tutorial.dart` | Tutoriel illustré du premier lancement |

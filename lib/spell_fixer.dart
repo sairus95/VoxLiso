@@ -54,6 +54,9 @@ class SpellFixer {
   /// Langues ayant un dictionnaire.
   static const Set<String> languages = {'fr', 'de', 'es', 'it', 'en', 'pt'};
 
+  /// Dictionnaire déjà chargé (sinon null : appeler [load]).
+  WordList? loaded(String lang) => _lists[lang];
+
   /// Charge (une fois) le dictionnaire d'une langue depuis les fichiers de l'application.
   Future<WordList?> load(String lang) {
     if (!languages.contains(lang)) return Future.value(null);
