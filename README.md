@@ -32,6 +32,9 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 |---|---|
 | Langue (Auto / FR / DE / ES / IT / EN / PT) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Les sous-titres dans une **autre langue** (néerlandais, polonais, roumain…) sont **traduits automatiquement** (en français par défaut ; langue téléchargée en Wi-Fi au premier besoin, ou DeepL). Sinon, la langue choisie est imposée. |
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
+| Repérer les sous-titres | Bouton qui observe l'écran quelques secondes (jusqu'à 12 s ; 30 s en mode écran du téléphone) et place la zone autour du texte qui change, en écartant le texte fixe. |
+| Sous-titres difficiles | Quand rien n'est lu dans la zone, VoxLiso la relit recadrée, contrastée (niveaux étirés) et agrandie (jusqu'à 1600 px). |
+| Correction | Mots mal lus corrigés avec un dictionnaire par langue (confusions « rn »/« m », « 1 »/« l »…, accents oubliés). Listes : FrequencyWords (Hermit Dave), corpus OpenSubtitles2018, CC BY-SA 4.0 — voir `assets/dict/LICENCE.md`. |
 | Texte fixe ignoré | Un texte qui ne change pas pendant plus de 20 s (logo de chaîne, heure, menu) n'est pas lu ; il est encadré en gris. |
 | Écran noir | Quelques secondes après « Lire » (caméra), l'écran passe au noir (luminosité au minimum sur Android) ; le toucher le rallume. |
 | Mises à jour | Android : VoxLiso vérifie les nouvelles versions sur GitHub (au plus toutes les 6 h) et propose « Mettre à jour » : téléchargement puis installation après confirmation. Bouton « Rechercher une mise à jour » dans les réglages. |

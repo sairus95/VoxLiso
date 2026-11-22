@@ -180,6 +180,14 @@ class AppSettings {
   String get skippedVersion => _prefs.getString('skippedVersion') ?? '';
   set skippedVersion(String v) => _prefs.setString('skippedVersion', v);
 
+  /// Image renforcée (zone recadrée, contrastée, agrandie) quand rien n'est lu.
+  bool get enhance => _prefs.getBool('enhance') ?? true;
+  set enhance(bool v) => _prefs.setBool('enhance', v);
+
+  /// Correction des mots mal lus avec un dictionnaire par langue.
+  bool get spellFix => _prefs.getBool('spellFix') ?? true;
+  set spellFix(bool v) => _prefs.setBool('spellFix', v);
+
   /// Zoom de la caméra.
   double get zoom => _prefs.getDouble('zoom') ?? 1.0;
   set zoom(double v) => _prefs.setDouble('zoom', v);

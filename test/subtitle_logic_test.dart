@@ -2,7 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voxliso/history.dart';
 import 'package:voxliso/language_detector.dart';
 import 'package:voxliso/languages.dart';
+import 'dart:ui' show Rect;
+
+import 'package:voxliso/spell_fixer.dart';
 import 'package:voxliso/static_filter.dart';
+import 'package:voxliso/subtitle_locator.dart';
 import 'package:voxliso/subtitle_tracker.dart';
 import 'package:voxliso/updater.dart';
 import 'package:voxliso/text_tools.dart';
@@ -267,6 +271,61 @@ void main() {
       expect(Updater.isNewer('v1.1.0', '1.0.99'), isTrue);
       expect(Updater.isNewer('v1.0.27', 'dev'), isFalse);
       expect(Updater.parseVersion('v2.3.4'), [2, 3, 4]);
+    });
+  });
+
+  group('SpellFixer', () {
+    final en = WordList.fromWords(['you', 'the', 'come', 'here', 'home', 'modern', 'corn', 'will']);
+    final fr = WordList.fromWords(['je', 'la', 'école', 'maison', 'journal', 'demain', 'de', 'à']);
+
+    test('confusions typiques de la lecture', () {
+      expect(SpellFixer.fix('Please corne here.', en), 'Please come here.');
+      expect(SpellFixer.fix('a rnodern home', en), 'a modern home');
+      expect(SpellFixer.fix('Le Journa1 de demain', fr), 'Le Journal de demain');
+      expect(SpellFixer.fix('la rnaison', fr), 'la maison');
+    });
+
+    test('accents oubliés', () {
+      expect(SpellFixer.fix('Je vais à l\'ecole demain.', fr), 'Je vais à l\'école demain.');
+    });
+
+    test('ne touche ni aux mots connus, ni aux noms propres, ni aux nombres', () {
+      expect(SpellFixer.fix('You will come home.', en), 'You will come home.');
+      expect(SpellFixer.fix('Ask Jarvis to come.', en), 'Ask Jarvis to come.');
+      expect(SpellFixer.fix('Rendez-vous à 20h30.', fr), 'Rendez-vous à 20h30.');
+    });
+
+    test('garde les majuscules', () {
+      expect(SpellFixer.fix('CORNE HERE', en), 'COME HERE');
+      expect(SpellFixer.fix('Corne here.', en), 'Come here.');
+    });
+  });
+
+  group('SubtitleLocator', () {
+    test('place la zone sur le texte qui change, pas sur le logo', () {
+      final loc = SubtitleLocator();
+      const subs = ['Je pense que tu as raison.', 'Allons-y tout de suite.', 'Où est-il passé ?'];
+      for (var i = 0; i < 15; i++) {
+        loc.add([
+          SeenLine('TF1', const Rect.fromLTRB(0.85, 0.05, 0.95, 0.12)),
+          SeenLine(subs[i ~/ 5], const Rect.fromLTRB(0.3, 0.80, 0.7, 0.86)),
+        ]);
+      }
+      final z = loc.result()!;
+      expect(z.subtitles, 3);
+      expect(z.top, lessThan(0.80));
+      expect(z.bottom, greaterThan(0.86));
+      expect(z.top, greaterThan(0.6));
+      expect(z.left, lessThanOrEqualTo(0.3));
+      expect(z.right, greaterThanOrEqualTo(0.7));
+    });
+
+    test('rien qui change : pas de zone', () {
+      final loc = SubtitleLocator();
+      for (var i = 0; i < 10; i++) {
+        loc.add([SeenLine('Menu principal', const Rect.fromLTRB(0.3, 0.1, 0.7, 0.15))]);
+      }
+      expect(loc.result(), isNull);
     });
   });
 }

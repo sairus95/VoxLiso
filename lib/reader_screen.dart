@@ -9,6 +9,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'camera_input.dart';
+import 'enhance.dart';
 import 'history.dart';
 import 'logo.dart';
 import 'language_detector.dart';
@@ -18,7 +19,9 @@ import 'screen_capture.dart';
 import 'settings.dart';
 import 'settings_sheet.dart';
 import 'speech_service.dart';
+import 'spell_fixer.dart';
 import 'static_filter.dart';
+import 'subtitle_locator.dart';
 import 'subtitle_tracker.dart';
 import 'system_bridge.dart';
 import 'text_tools.dart';
@@ -91,6 +94,15 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   /// Nouvelle version disponible sur GitHub.
   UpdateInfo? _update;
+
+  /// Correction des mots mal lus (dictionnaires par langue).
+  final SpellFixer _spell = SpellFixer();
+
+  /// Repérage automatique des sous-titres en cours (null = inactif).
+  SubtitleLocator? _locator;
+  Timer? _locTimer;
+  int _locSeconds = 0;
+  bool _locScreenLandscape = false;
 
   // Lecture de l'écran du téléphone (Android).
   final ScreenCapture _screen = ScreenCapture();
@@ -374,7 +386,79 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     if (_closed || !mounted) return;
     final ms = DateTime.now().difference(started).inMilliseconds;
-    _handleResult(result, frame.uprightSize, info, ms);
+    // Image renforcée : seulement pendant la lecture, si rien n'est lu dans la zone.
+    final enhance = s.enhance && _reading;
+    final found = _handleResult(result, frame.uprightSize, info, ms, feedTracker: !enhance);
+    if (!enhance) return;
+    if (found.inZone.isNotEmpty) {
+      _onLines(found.inZone.map((l) => l.text).toList());
+    } else {
+      await _enhancedPass(image, cam);
+    }
+  }
+
+  /// 2e lecture de la zone seule, recadrée, contrastée et agrandie : pour les
+  /// sous-titres pâles, à contour, lointains ou avec des reflets.
+  Future<void> _enhancedPass(CameraImage image, CameraDescription cam) async {
+    final crop = _crop;
+    final zone = Rect.fromLTRB(
+      crop.ox + s.roiLeft * crop.vw,
+      crop.oy + _roiTop * crop.vh,
+      crop.ox + s.roiRight * crop.vw,
+      crop.oy + _roiBottom * crop.vh,
+    );
+    final e = buildEnhancedInput(image, cam, _orientation, zone);
+    if (e == null) {
+      _onLines(const []);
+      return;
+    }
+    final RecognizedText result;
+    try {
+      result = await _recognizer.processImage(e.image);
+    } catch (_) {
+      _onLines(const []);
+      return;
+    }
+    if (_closed || !mounted) return;
+    final found = <(TextLine, Rect)>[];
+    for (final block in result.blocks) {
+      for (final line in block.lines) {
+        final full = e.toFull(line.boundingBox);
+        if (zone.contains(full.center)) found.add((line, full));
+      }
+    }
+    found.sort((a, b) {
+      final dy = a.$2.center.dy - b.$2.center.dy;
+      if (dy.abs() < math.min(a.$2.height, b.$2.height) * 0.5) {
+        return a.$2.left.compareTo(b.$2.left);
+      }
+      return dy < 0 ? -1 : 1;
+    });
+    final fixedIdx = s.ignoreStatic
+        ? _staticFilter.update([for (final f in found) f.$1.text])
+        : const <int>{};
+    final kept = [
+      for (var i = 0; i < found.length; i++)
+        if (!fixedIdx.contains(i)) found[i],
+    ];
+    Rect toDisplay(Rect r) => Rect.fromLTRB(
+          (r.left - crop.ox) / crop.vw,
+          (r.top - crop.oy) / crop.vh,
+          (r.right - crop.ox) / crop.vw,
+          (r.bottom - crop.oy) / crop.vh,
+        );
+    if (found.isNotEmpty) {
+      setState(() {
+        _boxes = [
+          ..._boxes,
+          for (var i = 0; i < found.length; i++)
+            DetectedBox(toDisplay(found[i].$2), !fixedIdx.contains(i),
+                fixed: fixedIdx.contains(i)),
+        ];
+        _diag = '$_diag\nImage renforcée : ${kept.length} ligne(s) lue(s)';
+      });
+    }
+    _onLines([for (final k in kept) k.$1.text]);
   }
 
   /// Exploite le résultat de l'OCR (flux vidéo ou photo) : cadres, diagnostic, lecture.
@@ -383,8 +467,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     RecognizedText result,
     Size upright,
     String info,
-    int ms,
-  ) {
+    int ms, {
+    bool feedTracker = true,
+  }) {
     final w = upright.width;
     final h = upright.height;
     final crop = _crop;
@@ -450,7 +535,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
     });
 
-    if (_reading) _onLines(lines.map((l) => l.text).toList());
+    // Repérage automatique : toutes les lignes visibles, avec leur position.
+    _locator?.add([for (final l in all) SeenLine(l.text, frac(l.boundingBox))]);
+
+    if (_reading && feedTracker) _onLines(lines.map((l) => l.text).toList());
     return (all: all, inZone: lines);
   }
 
@@ -475,6 +563,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   void _onScreenFrame(ScreenFrame f) {
     if (!s.screenSource || _closed) return;
+    if (_locator != null) {
+      _locScreenLandscape = f.landscape;
+      _locator!.add([for (final l in f.lines) SeenLine(l.text, l.rect)]);
+    }
     final (top, bottom) = _screenBand(f.landscape);
     final inZone = <ScreenLine>[];
     for (final l in f.lines) {
@@ -695,6 +787,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final before = _langDetector.current;
     final lang = s.autoLang ? await _langDetector.detect(fullText) : s.lang;
     if (_closed || !_reading) return;
+    // Mots mal lus corrigés avec le dictionnaire de la langue (« corne » -> « come »).
+    if (s.spellFix && SpellFixer.languages.contains(lang)) {
+      final list = await _spell.load(lang);
+      if (list != null) segments = [for (final t in segments) SpellFixer.fix(t, list)];
+    }
     if (s.autoLang && lang != before) {
       s.detectedLang = lang;
       if (isReadLanguage(lang)) {
@@ -763,6 +860,110 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _translateWarning = warning;
       });
     }
+  }
+
+  // ------------------------------------------------ repérage automatique
+
+  /// Observe l'écran quelques secondes et place la zone sur le texte qui change.
+  Future<void> _startLocate() async {
+    if (_locator != null) return;
+    if (s.screenSource && !_reading) {
+      await _toggleReading();
+      if (!_reading) return;
+    }
+    _undim();
+    setState(() {
+      _locator = SubtitleLocator();
+      _locSeconds = 0;
+    });
+    _announce('Repérage des sous-titres');
+    _locTimer?.cancel();
+    _locTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      final loc = _locator;
+      if (!mounted || _closed || loc == null) {
+        t.cancel();
+        return;
+      }
+      _locSeconds++;
+      final enough = _locSeconds >= 5 && loc.frames >= 10 && loc.distinctChanging >= 3;
+      final limit = s.screenSource ? 30 : 12;
+      if (enough || _locSeconds >= limit) {
+        t.cancel();
+        _finishLocate();
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  void _cancelLocate() {
+    _locTimer?.cancel();
+    setState(() => _locator = null);
+  }
+
+  void _finishLocate() {
+    final loc = _locator;
+    if (loc == null) return;
+    final z = loc.result();
+    setState(() => _locator = null);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (z == null) {
+      messenger?.showSnackBar(const SnackBar(
+        duration: Duration(seconds: 8),
+        content: Text('Aucun sous-titre repéré. Lancez un passage où les sous-titres '
+            'défilent, gardez le téléphone immobile et réessayez.'),
+      ));
+      _announce('Aucun sous-titre repéré');
+      return;
+    }
+    setState(() {
+      if (s.screenSource) {
+        _screenEditLandscape = _locScreenLandscape;
+        if (_locScreenLandscape) {
+          s.screenTopLandscape = z.top;
+          s.screenBottomLandscape = z.bottom;
+        } else {
+          s.screenTop = z.top;
+          s.screenBottom = z.bottom;
+        }
+      } else {
+        _setRoi(z.top, z.bottom);
+        s.roiLeft = z.left;
+        s.roiRight = z.right;
+      }
+    });
+    messenger?.showSnackBar(SnackBar(
+      duration: const Duration(seconds: 8),
+      content: Text('Zone placée sur les sous-titres (${z.subtitles} sous-titre(s) observé(s)). '
+          'Ajustez-la avec les poignées si besoin.'),
+    ));
+    _announce('Zone placée sur les sous-titres');
+  }
+
+  Widget _buildLocateButton() {
+    final running = _locator != null;
+    final limit = s.screenSource ? 30 : 12;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      OutlinedButton.icon(
+        onPressed: running ? _cancelLocate : _startLocate,
+        icon: Icon(running ? Icons.close : Icons.center_focus_strong),
+        label: Text(running
+            ? 'Repérage… $_locSeconds s (toucher pour annuler)'
+            : 'Repérer les sous-titres'),
+      ),
+      if (running) ...[
+        const SizedBox(height: 4),
+        LinearProgressIndicator(value: (_locSeconds / limit).clamp(0.0, 1.0).toDouble()),
+        const SizedBox(height: 2),
+        Text(
+          s.screenSource
+              ? 'Ouvrez votre vidéo avec les sous-titres : la zone sera placée toute seule.'
+              : 'Gardez le téléphone immobile, avec des sous-titres à l\'écran.',
+          style: Theme.of(context).textTheme.bodySmall,
+          textAlign: TextAlign.center,
+        ),
+      ],
+    ]);
   }
 
   // ------------------------------------------------------- écran noir
@@ -1147,6 +1348,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _translator.close();
     _screen.dispose();
     _dimTimer?.cancel();
+    _locTimer?.cancel();
     if (_dimmed) {
       SystemBridge.setBrightness(-1);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -1290,6 +1492,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           onSelectionChanged: (v) => _setSource(v.first),
         ),
       ],
+      const SizedBox(height: 8),
+      _buildLocateButton(),
       if (!s.screenSource && _maxZoom > _minZoom) _buildZoom(),
       if (!s.screenSource && _maxExposure > _minExposure) _buildExposure(),
       if (a11y) ...[

@@ -582,6 +582,26 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
+          title: const Text('Améliorer les sous-titres difficiles'),
+          subtitle: const Text(
+              'Quand rien n\'est lu dans la zone, VoxLiso la relit recadrée, contrastée et '
+              'agrandie : sous-titres jaunes ou à contour, télé lointaine, reflets. '
+              'Consomme un peu plus de batterie.'),
+          value: s.enhance,
+          onChanged: (v) => setState(() => s.enhance = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Corriger les erreurs de lecture'),
+          subtitle: const Text(
+              'Les mots mal lus sont corrigés avec un dictionnaire de la langue avant d\'être '
+              'dits (« corne » -> « come », « ecole » -> « école »). Listes de mots : '
+              'FrequencyWords (Hermit Dave), corpus OpenSubtitles, licence CC BY-SA 4.0.'),
+          value: s.spellFix,
+          onChanged: (v) => setState(() => s.spellFix = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
           title: const Text('Ignorer le texte fixe'),
           subtitle: const Text(
               'Un texte qui ne change pas pendant plus de 20 secondes (logo de la chaîne, '
