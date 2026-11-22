@@ -269,6 +269,13 @@ void main() {
   });
 
   group('Updater', () {
+    test('textes de progression du téléchargement', () {
+      expect(Updater.progressText(null), 'Téléchargement…');
+      expect(Updater.progressText(0.426), 'Téléchargement : 43 %');
+      expect(Updater.pausedText(2), 'En attente du réseau…');
+      expect(Updater.pausedText(3), 'En attente du Wi-Fi…');
+      expect(Updater.pausedText(99), 'En pause…');
+    });
     test('compare les numéros de version', () {
       expect(Updater.isNewer('v1.0.27', '1.0.26'), isTrue);
       expect(Updater.isNewer('v1.0.26', '1.0.26'), isFalse);
