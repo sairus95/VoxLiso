@@ -24,8 +24,14 @@ class UpdateInfo {
 class Updater {
   static const String repo = 'sairus95/VoxLiso';
 
-  /// Seulement sur Android, et pour une version compilée par GitHub (numérotée).
-  static bool get supported => Platform.isAndroid && parseVersion(kAppVersion) != null;
+  /// Version boutique (Play Store, App Store) : les mises à jour passent par la
+  /// boutique, l'application ne doit jamais se mettre à jour elle-même.
+  static const bool storeBuild = bool.fromEnvironment('STORE_BUILD');
+
+  /// Seulement sur Android, pour l'APK compilé par GitHub (numéroté), jamais
+  /// pour la version boutique.
+  static bool get supported =>
+      !storeBuild && Platform.isAndroid && parseVersion(kAppVersion) != null;
 
   /// « v1.0.27 » ou « 1.0.27 » -> [1, 0, 27] ; null si ce n'est pas un numéro.
   static List<int>? parseVersion(String v) {
