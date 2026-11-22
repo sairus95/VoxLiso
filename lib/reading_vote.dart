@@ -151,7 +151,7 @@ class ReadingVote {
     String? best;
     var bestKey = double.negativeInfinity;
     counts.forEach((w, n) {
-      final key = n + (isKnownWord(w, dict) ? 0.5 : 0) + (w == pivotWord ? 0.1 : 0);
+      final key = n.toDouble() + (isKnownWord(w, dict) ? 0.5 : 0.0) + (w == pivotWord ? 0.1 : 0.0);
       if (key > bestKey) {
         bestKey = key;
         best = w;
