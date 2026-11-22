@@ -32,6 +32,12 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 |---|---|
 | Langue (Auto / FR / DE / ES / IT / EN / PT) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Les sous-titres dans une **autre langue** (néerlandais, polonais, roumain…) sont **traduits automatiquement** (en français par défaut ; langue téléchargée en Wi-Fi au premier besoin, ou DeepL). Sinon, la langue choisie est imposée. |
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
+| Repérer les sous-titres | Bouton qui observe l'écran quelques secondes (jusqu'à 12 s ; 30 s en mode écran du téléphone) et place la zone autour du texte qui change, en écartant le texte fixe. |
+| Sous-titres difficiles | Quand rien n'est lu dans la zone, VoxLiso la relit recadrée, contrastée (niveaux étirés) et agrandie (jusqu'à 1600 px). |
+| Correction | Mots mal lus corrigés avec un dictionnaire par langue (confusions « rn »/« m », « 1 »/« l »…, accents oubliés). Listes : FrequencyWords (Hermit Dave), corpus OpenSubtitles2018, CC BY-SA 4.0 — voir `assets/dict/LICENCE.md`. |
+| Texte fixe ignoré | Un texte qui ne change pas pendant plus de 20 s (logo de chaîne, heure, menu) n'est pas lu ; il est encadré en gris. |
+| Écran noir | En option (désactivé par défaut) : pendant la lecture (caméra), après 8 s sans toucher l'écran, il passe au noir (luminosité au minimum sur Android) ; le toucher le rallume. |
+| Mises à jour | Android : VoxLiso vérifie les nouvelles versions sur GitHub (au plus toutes les 6 h) et propose « Mettre à jour » : téléchargement puis installation après confirmation. Bouton « Rechercher une mise à jour » dans les réglages. |
 | Zone centrée | La zone de lecture est un rectangle centré (15–85 % de la largeur par défaut) : le texte des côtés (logos, heure, décor) est ignoré. Poignées jaunes sur les 4 côtés. |
 | Vue 16:9 | Par défaut, l'aperçu est au format des télés (16:9), téléphone debout comme couché. Debout, il montre la bande centrale de l'image ; seul le texte visible est lu. Désactivable dans les réglages (vue 9:16). |
 | Zoom | Pour « rapprocher » une télé éloignée. |
@@ -39,7 +45,8 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 | Voix | **Moteur de voix** au choix sur Android (Google, Samsung…), bouton **Installer d'autres voix**, **hauteur** réglable (grave / aiguë) pour chaque voix. Par langue : voix principale et voix du 2e personnage, à écouter avec ▶. Sur iPhone, nom, homme/femme et voix « améliorées » ; sur Android, qualité seulement (écouter pour choisir). Par défaut : la voix la plus naturelle installée. |
 | Une voix par personnage | Dans les dialogues à tirets, la 2e réplique est lue avec une autre voix (ou plus grave s'il n'y en a qu'une). |
 | Traduction | Lire les sous-titres traduits en français, allemand, espagnol, italien, anglais ou portugais, sur le téléphone. Chaque langue se télécharge une fois (≈30 Mo), ensuite sans internet. **Option DeepL** : avec une clé gratuite « DeepL API Free » (500 000 caractères/mois), traduction en ligne de meilleure qualité, retour automatique au hors ligne sans réseau. |
-| Vitesse de la voix | De x0,5 à x2. |
+| Phrases coupées | Quand une phrase est répartie sur deux sous-titres (« Je pense que… » / « …tu as raison »), elle est traduite en entier plutôt qu'en deux morceaux : un sous-titre qui finit par « … », une virgule ou un petit mot (« que », « the », « und »…) attend la suite jusqu'à 3,5 s. Pas de regroupement si le sous-titre suivant est une nouvelle réplique (tiret). Seulement pendant la traduction. |
+| Vitesse de la voix | De x0,5 à x2. **Vitesse automatique** (activée par défaut) : quand les sous-titres défilent plus vite que la voix, elle accélère un peu (jusqu'à +40 %, par paliers) pour ne pas prendre de retard, puis revient doucement à la vitesse choisie. « voix accélérée ×1,2 » s'affiche pendant ce temps. |
 | Réactivité | Rapide / Normale / Stable (Stable = moins d'erreurs si le téléphone bouge). |
 | Mode photo | Analyse de vraies photos au lieu de la vidéo : plus lent, mais plus fiable sur certains téléphones. |
 | Couper la phrase en cours | Passe directement au nouveau sous-titre si la voix est en retard. |
@@ -127,10 +134,12 @@ Dans la Play Console, laissez Google gérer la clé de signature de l'applicatio
 | `lib/text_tools.dart` | Nettoyage des sous-titres, comparaison de textes |
 | `lib/subtitle_tracker.dart` | Décide quand lire un sous-titre (stabilité, doublons, défilement) |
 | `lib/speech_service.dart` | Synthèse vocale et file d'attente |
+| `lib/rate_pacer.dart` | Vitesse automatique : accélération selon le retard de la voix |
 | `lib/languages.dart` | Les 6 langues lues (FR, DE, ES, IT, EN, PT), leurs voix, et les autres langues traduites |
 | `lib/language_detector.dart` | Détection automatique de la langue (ML Kit Language ID) |
 | `lib/voices.dart` | Liste et classement des voix du téléphone, choix du 2e personnage |
 | `lib/translator.dart` | Traduction hors ligne (ML Kit Translation) et téléchargement des langues |
+| `lib/sentence_joiner.dart` | Repérage des phrases coupées entre deux sous-titres et réunion des morceaux avant traduction |
 | `lib/history.dart` | Historique des sous-titres lus et son écran |
 | `lib/tutorial.dart` | Tutoriel illustré du premier lancement |
 | `lib/screen_capture.dart` | Lien avec le service Android de lecture de l'écran du téléphone |

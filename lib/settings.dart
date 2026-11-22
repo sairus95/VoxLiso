@@ -66,6 +66,11 @@ class AppSettings {
     screenBottomLandscape = defaultScreenBottomLandscape;
   }
 
+  /// Vitesse automatique : la voix accélère un peu (jusqu'à +40 %) quand
+  /// les sous-titres défilent plus vite qu'elle ne parle.
+  bool get autoRate => _prefs.getBool('autoRate') ?? true;
+  set autoRate(bool v) => _prefs.setBool('autoRate', v);
+
   /// Couper la phrase en cours quand un nouveau sous-titre apparaît.
   bool get interrupt => _prefs.getBool('interrupt') ?? false;
   set interrupt(bool v) => _prefs.setBool('interrupt', v);
@@ -165,6 +170,30 @@ class AppSettings {
   /// Clé de l'API DeepL (facultative) : traduction en ligne de meilleure qualité.
   String get deeplKey => _prefs.getString('deeplKey') ?? '';
   set deeplKey(String v) => _prefs.setString('deeplKey', v.trim());
+
+  /// Ignorer le texte resté identique plus de 20 s (logo, heure, menu).
+  bool get ignoreStatic => _prefs.getBool('ignoreStatic') ?? true;
+  set ignoreStatic(bool v) => _prefs.setBool('ignoreStatic', v);
+
+  /// Écran noir pendant la lecture (caméra) : toucher pour le rallumer.
+  /// En option, désactivé par défaut (nouvelle clé depuis la v1.0.33 : l'ancien
+  /// réglage, activé par défaut, n'est pas repris).
+  bool get blackScreen => _prefs.getBool('blackScreenOpt') ?? false;
+  set blackScreen(bool v) => _prefs.setBool('blackScreenOpt', v);
+
+  /// Mises à jour : dernière vérification (ms) et version écartée (« Plus tard »).
+  int get lastUpdateCheck => _prefs.getInt('lastUpdateCheck') ?? 0;
+  set lastUpdateCheck(int v) => _prefs.setInt('lastUpdateCheck', v);
+  String get skippedVersion => _prefs.getString('skippedVersion') ?? '';
+  set skippedVersion(String v) => _prefs.setString('skippedVersion', v);
+
+  /// Image renforcée (zone recadrée, contrastée, agrandie) quand rien n'est lu.
+  bool get enhance => _prefs.getBool('enhance') ?? true;
+  set enhance(bool v) => _prefs.setBool('enhance', v);
+
+  /// Correction des mots mal lus avec un dictionnaire par langue.
+  bool get spellFix => _prefs.getBool('spellFix') ?? true;
+  set spellFix(bool v) => _prefs.setBool('spellFix', v);
 
   /// Zoom de la caméra.
   double get zoom => _prefs.getDouble('zoom') ?? 1.0;

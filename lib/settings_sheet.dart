@@ -8,6 +8,7 @@ import 'premium.dart';
 import 'settings.dart';
 import 'system_bridge.dart';
 import 'translator.dart';
+import 'updater.dart';
 import 'version.dart';
 import 'voices.dart';
 
@@ -27,6 +28,7 @@ class SettingsSheet extends StatefulWidget {
     required this.onPreviewVoice,
     required this.onResetZone,
     required this.onTutorial,
+    required this.onCheckUpdate,
   });
 
   final AppSettings settings;
@@ -54,6 +56,9 @@ class SettingsSheet extends StatefulWidget {
   final VoidCallback onResetZone;
   final VoidCallback onTutorial;
 
+  /// Recherche une nouvelle version ; renvoie le message à afficher.
+  final Future<String> Function() onCheckUpdate;
+
   @override
   State<SettingsSheet> createState() => _SettingsSheetState();
 }
@@ -63,6 +68,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
   late final TextEditingController _deepl = TextEditingController(text: widget.settings.deeplKey);
   bool _testing = false;
   String? _testResult;
+  bool _checkingUpdate = false;
+  String? _updateResult;
 
   @override
   void dispose() {
@@ -379,6 +386,15 @@ class _SettingsSheetState extends State<SettingsSheet> {
         onChanged: (v) => setState(() => s.rate = v),
         onChangeEnd: (_) => widget.onVoiceChanged(),
       ),
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Vitesse automatique'),
+        subtitle: const Text(
+            'La voix accélère un peu (jusqu\'à +40 %) quand les sous-titres défilent vite, '
+            'pour ne pas prendre de retard, puis revient à la vitesse choisie.'),
+        value: s.autoRate,
+        onChanged: (v) => setState(() => s.autoRate = v),
+      ),
       if (widget.voiceMissing)
         Text(
           'Voix ${widget.voice.label} absente. ${_installHint()}',
@@ -615,6 +631,45 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
+          title: const Text('Améliorer les sous-titres difficiles'),
+          subtitle: const Text(
+              'Quand rien n\'est lu dans la zone, VoxLiso la relit recadrée, contrastée et '
+              'agrandie : sous-titres jaunes ou à contour, télé lointaine, reflets. '
+              'Consomme un peu plus de batterie.'),
+          value: s.enhance,
+          onChanged: (v) => setState(() => s.enhance = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Corriger les erreurs de lecture'),
+          subtitle: const Text(
+              'Les mots mal lus sont corrigés avec un dictionnaire de la langue avant d\'être '
+              'dits (« corne » -> « come », « ecole » -> « école »). Listes de mots : '
+              'FrequencyWords (Hermit Dave), corpus OpenSubtitles, licence CC BY-SA 4.0.'),
+          value: s.spellFix,
+          onChanged: (v) => setState(() => s.spellFix = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Ignorer le texte fixe'),
+          subtitle: const Text(
+              'Un texte qui ne change pas pendant plus de 20 secondes (logo de la chaîne, '
+              'heure, titre d\'un menu) n\'est pas lu. Il est encadré en gris.'),
+          value: s.ignoreStatic,
+          onChanged: (v) => setState(() => s.ignoreStatic = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Écran noir pendant la lecture'),
+          subtitle: const Text(
+              'En option : pendant la lecture, après 8 secondes sans toucher l\'écran, il passe '
+              'au noir pour ne pas gêner dans le noir et économiser la batterie. '
+              'Touchez-le pour le rallumer.'),
+          value: s.blackScreen,
+          onChanged: (v) => setState(() => s.blackScreen = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
           title: const Text('Mode photo'),
           subtitle: const Text(
               'Analyse de vraies photos au lieu de la vidéo : plus lent (≈1 s), '
@@ -649,5 +704,35 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ),
         const SizedBox(height: 8),
         Text('VoxLiso version $kAppVersion', style: theme.textTheme.bodySmall),
+        if (Updater.supported) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _checkingUpdate
+                  ? null
+                  : () async {
+                      setState(() {
+                        _checkingUpdate = true;
+                        _updateResult = null;
+                      });
+                      final msg = await widget.onCheckUpdate();
+                      if (mounted) {
+                        setState(() {
+                          _checkingUpdate = false;
+                          _updateResult = msg;
+                        });
+                      }
+                    },
+              icon: _checkingUpdate
+                  ? const SizedBox(
+                      width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.system_update),
+              label: const Text('Rechercher une mise à jour'),
+            ),
+          ),
+          if (_updateResult != null)
+            Text(_updateResult!, style: theme.textTheme.bodySmall),
+        ],
       ];
 }

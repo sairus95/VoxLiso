@@ -50,8 +50,10 @@ List<String> subtitleParts(List<String> lines, {bool removeSoundTags = true}) {
   }
   if (buffer.isNotEmpty) parts.add(buffer);
 
+  // Pause entre les répliques d'un dialogue ; la dernière garde sa ponctuation
+  // d'origine, pour savoir si la phrase continue dans le sous-titre suivant.
   if (parts.length > 1) {
-    for (var i = 0; i < parts.length; i++) {
+    for (var i = 0; i < parts.length - 1; i++) {
       if (!_endsWithPunct.hasMatch(parts[i])) parts[i] = '${parts[i]}.';
     }
   }

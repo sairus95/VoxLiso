@@ -1,10 +1,15 @@
 package com.voxliso.voxliso
 
 import android.app.Activity
+import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageInstaller
+import android.net.Uri
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.speech.tts.TextToSpeech
+import android.view.WindowManager
+import java.io.File
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -20,6 +25,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQUEST_CAPTURE = 4242
+        private const val ACTION_INSTALL_STATUS = "com.voxliso.voxliso.INSTALL_STATUS"
     }
 
     private var pendingStart: MethodChannel.Result? = null
@@ -98,6 +104,37 @@ class MainActivity : FlutterActivity() {
                         }
                     )
                 }
+                // Luminosité de l'écran pour VoxLiso seulement (-1 = celle du téléphone).
+                "setBrightness" -> {
+                    val value = call.argument<Double>("value") ?: -1.0
+                    val lp = window.attributes
+                    lp.screenBrightness = if (value < 0) {
+                        WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    } else {
+                        value.toFloat().coerceIn(0.01f, 1f)
+                    }
+                    window.attributes = lp
+                    result.success(true)
+                }
+                // Mise à jour : installe l'APK téléchargé (Android demande confirmation).
+                "installApk" -> {
+                    val path = call.argument<String>("path")
+                    result.success(path != null && installApk(File(path)))
+                }
+                "openUrl" -> {
+                    val url = call.argument<String>("url")
+                    result.success(
+                        try {
+                            startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                            true
+                        } catch (_: Exception) {
+                            false
+                        }
+                    )
+                }
                 // Réglages de synthèse vocale d'Android (moteur par défaut, voix).
                 "openTtsSettings" -> {
                     result.success(
@@ -151,6 +188,57 @@ class MainActivity : FlutterActivity() {
             }
         } else {
             result?.success(false)
+        }
+    }
+
+    /** Installe un APK avec PackageInstaller ; le résultat revient dans onNewIntent. */
+    private fun installApk(file: File): Boolean {
+        return try {
+            val installer = packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            val sessionId = installer.createSession(params)
+            installer.openSession(sessionId).use { session ->
+                file.inputStream().use { input ->
+                    session.openWrite("VoxLiso.apk", 0, file.length()).use { output ->
+                        input.copyTo(output)
+                        session.fsync(output)
+                    }
+                }
+                val status = Intent(this, MainActivity::class.java)
+                    .setAction(ACTION_INSTALL_STATUS)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                val flags = if (Build.VERSION.SDK_INT >= 31) {
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                } else {
+                    PendingIntent.FLAG_UPDATE_CURRENT
+                }
+                val pending = PendingIntent.getActivity(this, sessionId, status, flags)
+                session.commit(pending.intentSender)
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action != ACTION_INSTALL_STATUS) return
+        val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            // Fenêtre d'Android « Mettre à jour cette application ? ».
+            val confirm: Intent? = if (Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_INTENT)
+            }
+            confirm?.let {
+                try {
+                    startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } catch (_: Exception) {
+                }
+            }
         }
     }
 

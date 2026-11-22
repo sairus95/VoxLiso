@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show File, Platform;
 import 'dart:math' as math;
 
@@ -8,6 +9,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'camera_input.dart';
+import 'enhance.dart';
 import 'history.dart';
 import 'logo.dart';
 import 'plus_screen.dart';
@@ -16,13 +18,18 @@ import 'language_detector.dart';
 import 'languages.dart';
 import 'roi_overlay.dart';
 import 'screen_capture.dart';
+import 'sentence_joiner.dart';
 import 'settings.dart';
 import 'settings_sheet.dart';
 import 'speech_service.dart';
+import 'spell_fixer.dart';
+import 'static_filter.dart';
+import 'subtitle_locator.dart';
 import 'subtitle_tracker.dart';
 import 'system_bridge.dart';
 import 'text_tools.dart';
 import 'translator.dart';
+import 'updater.dart';
 import 'tutorial.dart';
 import 'version.dart';
 import 'voices.dart';
@@ -80,6 +87,32 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   final SubtitleHistory _history = SubtitleHistory();
 
+  /// Texte fixe (logo, heure, menu) : ignoré après 20 s sans changement.
+  final StaticTextFilter _staticFilter = StaticTextFilter();
+
+  /// Écran noir pendant la lecture.
+  bool _dimmed = false;
+  Timer? _dimTimer;
+  static const Duration _dimDelay = Duration(seconds: 8);
+
+  /// Nouvelle version disponible sur GitHub.
+  UpdateInfo? _update;
+
+  /// Correction des mots mal lus (dictionnaires par langue).
+  final SpellFixer _spell = SpellFixer();
+
+  /// Phrase coupée en attente de sa suite (traduction) : texte, langue et
+  /// position de la réplique (pour garder la voix du bon personnage).
+  ({String text, String lang, int index})? _held;
+  Timer? _heldTimer;
+  static const Duration _holdDelay = Duration(milliseconds: 3500);
+
+  /// Repérage automatique des sous-titres en cours (null = inactif).
+  SubtitleLocator? _locator;
+  Timer? _locTimer;
+  int _locSeconds = 0;
+  bool _locScreenLandscape = false;
+
   // Lecture de l'écran du téléphone (Android).
   final ScreenCapture _screen = ScreenCapture();
   List<DetectedBox> _screenBoxes = const [];
@@ -134,6 +167,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       s.source = 'camera';
     }
     _speech.interrupt = s.interrupt;
+    _speech.autoRate = s.autoRate;
+    _speech.boost.addListener(_onBoost);
     _zoom = s.zoom;
     _start();
   }
@@ -143,8 +178,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (s.ttsEngine.isNotEmpty) await _speech.setEngine(s.ttsEngine);
     _catalog.load(await _speech.rawVoices());
     _translator.refresh();
+    _autoCheckUpdate();
     await _applyVoice();
     await _initCamera();
+  }
+
+  /// Vitesse automatique : la voix accélère, on l'affiche (« voix ×1,2 »).
+  void _onBoost() {
+    if (mounted && !_closed) setState(() {});
   }
 
   /// Voix utilisée : la langue choisie, ou la dernière langue détectée en mode Auto.
@@ -329,6 +370,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _undim();
     // Mode écran : la lecture continue pendant que l'on regarde la vidéo.
     if (s.screenSource) return;
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
@@ -372,7 +414,79 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     if (_closed || !mounted) return;
     final ms = DateTime.now().difference(started).inMilliseconds;
-    _handleResult(result, frame.uprightSize, info, ms);
+    // Image renforcée : seulement pendant la lecture, si rien n'est lu dans la zone.
+    final enhance = s.enhance && _reading;
+    final found = _handleResult(result, frame.uprightSize, info, ms, feedTracker: !enhance);
+    if (!enhance) return;
+    if (found.inZone.isNotEmpty) {
+      _onLines(found.inZone.map((l) => l.text).toList());
+    } else {
+      await _enhancedPass(image, cam);
+    }
+  }
+
+  /// 2e lecture de la zone seule, recadrée, contrastée et agrandie : pour les
+  /// sous-titres pâles, à contour, lointains ou avec des reflets.
+  Future<void> _enhancedPass(CameraImage image, CameraDescription cam) async {
+    final crop = _crop;
+    final zone = Rect.fromLTRB(
+      crop.ox + s.roiLeft * crop.vw,
+      crop.oy + _roiTop * crop.vh,
+      crop.ox + s.roiRight * crop.vw,
+      crop.oy + _roiBottom * crop.vh,
+    );
+    final e = buildEnhancedInput(image, cam, _orientation, zone);
+    if (e == null) {
+      _onLines(const []);
+      return;
+    }
+    final RecognizedText result;
+    try {
+      result = await _recognizer.processImage(e.image);
+    } catch (_) {
+      _onLines(const []);
+      return;
+    }
+    if (_closed || !mounted) return;
+    final found = <(TextLine, Rect)>[];
+    for (final block in result.blocks) {
+      for (final line in block.lines) {
+        final full = e.toFull(line.boundingBox);
+        if (zone.contains(full.center)) found.add((line, full));
+      }
+    }
+    found.sort((a, b) {
+      final dy = a.$2.center.dy - b.$2.center.dy;
+      if (dy.abs() < math.min(a.$2.height, b.$2.height) * 0.5) {
+        return a.$2.left.compareTo(b.$2.left);
+      }
+      return dy < 0 ? -1 : 1;
+    });
+    final fixedIdx = s.ignoreStatic
+        ? _staticFilter.update([for (final f in found) f.$1.text])
+        : const <int>{};
+    final kept = [
+      for (var i = 0; i < found.length; i++)
+        if (!fixedIdx.contains(i)) found[i],
+    ];
+    Rect toDisplay(Rect r) => Rect.fromLTRB(
+          (r.left - crop.ox) / crop.vw,
+          (r.top - crop.oy) / crop.vh,
+          (r.right - crop.ox) / crop.vw,
+          (r.bottom - crop.oy) / crop.vh,
+        );
+    if (found.isNotEmpty) {
+      setState(() {
+        _boxes = [
+          ..._boxes,
+          for (var i = 0; i < found.length; i++)
+            DetectedBox(toDisplay(found[i].$2), !fixedIdx.contains(i),
+                fixed: fixedIdx.contains(i)),
+        ];
+        _diag = '$_diag\nImage renforcée : ${kept.length} ligne(s) lue(s)';
+      });
+    }
+    _onLines([for (final k in kept) k.$1.text]);
   }
 
   /// Exploite le résultat de l'OCR (flux vidéo ou photo) : cadres, diagnostic, lecture.
@@ -381,8 +495,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     RecognizedText result,
     Size upright,
     String info,
-    int ms,
-  ) {
+    int ms, {
+    bool feedTracker = true,
+  }) {
     final w = upright.width;
     final h = upright.height;
     final crop = _crop;
@@ -428,8 +543,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           (r.right / w - crop.ox) / crop.vw,
           (r.bottom / h - crop.oy) / crop.vh,
         );
+    // Texte fixe (logo, heure, menu) : ignoré.
+    final fixedIdx =
+        s.ignoreStatic ? _staticFilter.update([for (final l in lines) l.text]) : const <int>{};
+    final fixed = {for (final i in fixedIdx) lines[i]};
+    if (fixed.isNotEmpty) lines.removeWhere(fixed.contains);
     final boxes = [
-      for (final l in all) DetectedBox(frac(l.boundingBox), lines.contains(l)),
+      for (final l in all)
+        DetectedBox(frac(l.boundingBox), lines.contains(l), fixed: fixed.contains(l)),
     ];
     final rawText = lines.map((l) => l.text).join(' / ');
     setState(() {
@@ -438,10 +559,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _diag = 'v$kAppVersion · ${_landscape ? 'paysage' : 'portrait'} · '
           '${s.photoMode ? 'Mode photo · ' : ''}$info · ${w.toInt()}×${h.toInt()} · ${ms}ms\n'
           'Texte trouvé : ${all.length} ligne(s), ${lines.length} dans la zone'
+          '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
     });
 
-    if (_reading) _onLines(lines.map((l) => l.text).toList());
+    // Repérage automatique : toutes les lignes visibles, avec leur position.
+    _locator?.add([for (final l in all) SeenLine(l.text, frac(l.boundingBox))]);
+
+    if (_reading && feedTracker) _onLines(lines.map((l) => l.text).toList());
     return (all: all, inZone: lines);
   }
 
@@ -454,8 +579,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Répliques séparées seulement si tout le sous-titre est nouveau
     // (pas pour la fin d'un sous-titre « en direct » qui défile).
     final segments = s.dialogueVoices && parts.length > 1 && toSay == text ? parts : [toSay];
-    _speakChain =
-        _speakChain.then((_) => _speakSubtitle(text, segments)).catchError((Object _) {});
+    // Un sous-titre qui commence par un tiret ouvre une nouvelle réplique :
+    // ce n'est jamais la suite de la phrase précédente.
+    final firstLine = lineTexts.map((l) => l.trim()).firstWhere((l) => l.isNotEmpty, orElse: () => '');
+    final dialogueStart = toSay == text && RegExp(r'^[-–—]').hasMatch(firstLine);
+    _speakChain = _speakChain
+        .then((_) => _speakSubtitle(text, segments, dialogueStart: dialogueStart))
+        .catchError((Object _) {});
   }
 
   // ------------------------------------------------- écran du téléphone
@@ -466,6 +596,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   void _onScreenFrame(ScreenFrame f) {
     if (!s.screenSource || _closed) return;
+    if (_locator != null) {
+      _locScreenLandscape = f.landscape;
+      _locator!.add([for (final l in f.lines) SeenLine(l.text, l.rect)]);
+    }
     final (top, bottom) = _screenBand(f.landscape);
     final inZone = <ScreenLine>[];
     for (final l in f.lines) {
@@ -480,13 +614,21 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       }
       return dy < 0 ? -1 : 1;
     });
+    final fixedIdx =
+        s.ignoreStatic ? _staticFilter.update([for (final l in inZone) l.text]) : const <int>{};
+    final fixed = {for (final i in fixedIdx) inZone[i]};
+    if (fixed.isNotEmpty) inZone.removeWhere(fixed.contains);
     final raw = inZone.map((l) => l.text).join(' / ');
     if (mounted) {
       setState(() {
-        _screenBoxes = [for (final l in f.lines) DetectedBox(l.rect, inZone.contains(l))];
+        _screenBoxes = [
+          for (final l in f.lines)
+            DetectedBox(l.rect, inZone.contains(l), fixed: fixed.contains(l)),
+        ];
         _screenBoxesLandscape = f.landscape;
         _diag = 'Écran du téléphone (${f.landscape ? 'paysage' : 'portrait'})\n'
             'Texte trouvé : ${f.lines.length} ligne(s), ${inZone.length} dans la zone'
+            '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
             '${raw.isEmpty ? '' : '\n« $raw »'}';
       });
     }
@@ -502,6 +644,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (_reading) await _stopReadingAsync();
     s.source = source;
     _tracker.reset();
+    _staticFilter.reset();
     if (source == 'screen') {
       await _releaseCamera();
     } else {
@@ -677,10 +820,16 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   /// Identifie la langue (mode Auto), traduit si demandé, puis dit le
   /// sous-titre : une voix par réplique dans les dialogues.
-  Future<void> _speakSubtitle(String fullText, List<String> segments) async {
+  Future<void> _speakSubtitle(String fullText, List<String> segments,
+      {bool dialogueStart = false}) async {
     final before = _langDetector.current;
     final lang = s.autoLang ? await _langDetector.detect(fullText) : s.lang;
     if (_closed || !_reading) return;
+    // Mots mal lus corrigés avec le dictionnaire de la langue (« corne » -> « come »).
+    if (s.spellFix && SpellFixer.languages.contains(lang)) {
+      final list = await _spell.load(lang);
+      if (list != null) segments = [for (final t in segments) SpellFixer.fix(t, list)];
+    }
     if (s.autoLang && lang != before) {
       s.detectedLang = lang;
       if (isReadLanguage(lang)) {
@@ -691,15 +840,70 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       }
     }
 
+    final target = _targetFor(lang);
+    if (target.isEmpty || target == lang) {
+      // Pas de traduction : une éventuelle phrase en attente part d'abord.
+      await _flushHeld();
+      await _translateAndSay(lang, segments);
+      return;
+    }
+
+    // Traduction : une phrase coupée entre deux sous-titres est traduite en entier.
+    final segs = List<String>.of(segments);
+    var firstIndex = 0;
+    final held = _held;
+    if (held != null) {
+      _heldTimer?.cancel();
+      _held = null;
+      if (held.lang == lang && !dialogueStart && segs.isNotEmpty) {
+        segs[0] = SentenceJoiner.join(held.text, segs[0]);
+        firstIndex = held.index;
+      } else {
+        await _translateAndSay(held.lang, [held.text], firstIndex: held.index);
+      }
+    }
+    // (longueur plafonnée : une phrase qui ne finit jamais n'est pas retenue sans fin)
+    if (segs.isNotEmpty && segs.last.length < 220 && SentenceJoiner.isIncomplete(segs.last, lang)) {
+      final index = firstIndex + segs.length - 1;
+      _held = (text: segs.removeLast(), lang: lang, index: index);
+      _heldTimer = Timer(_holdDelay, () {
+        // Pas de suite à temps : le morceau est traduit seul.
+        _speakChain = _speakChain.then((_) => _flushHeld()).catchError((Object _) {});
+      });
+    }
+    if (segs.isEmpty) return;
+    await _translateAndSay(lang, segs, firstIndex: firstIndex);
+  }
+
+  /// Langue dans laquelle lire un sous-titre de langue [lang] ('' = pas de traduction) :
+  /// celle choisie dans « Traduction » ; sinon, une langue autre que
+  /// fr/de/es/it/en/pt (néerlandais, polonais…) est traduite automatiquement.
+  /// Sans VoxLiso Plus, pas de traduction : lecture dans la langue d'origine.
+  String _targetFor(String lang) {
+    if (!Premium.instance.has(PlusFeature.translation)) return '';
+    var target = s.translateTo;
+    if (target.isEmpty && !isReadLanguage(lang)) target = s.autoTranslateTo;
+    return target;
+  }
+
+  /// Traduit et dit la phrase en attente (délai écoulé, ou avant une autre lecture).
+  Future<void> _flushHeld() async {
+    final h = _held;
+    if (h == null) return;
+    _heldTimer?.cancel();
+    _held = null;
+    if (_closed || !_reading) return;
+    await _translateAndSay(h.lang, [h.text], firstIndex: h.index);
+  }
+
+  /// Traduit si besoin puis dit les répliques [segments] (langue [lang]).
+  /// [firstIndex] : position de la 1re réplique, pour la voix du personnage.
+  Future<void> _translateAndSay(String lang, List<String> segments, {int firstIndex = 0}) async {
+    if (_closed || !_reading || segments.isEmpty) return;
     var speakLang = lang;
     var out = segments;
     String? warning;
-    // Langue de lecture : celle choisie dans « Traduction » ; sinon, une langue
-    // autre que fr/de/es/it/en/pt (néerlandais, polonais…) est traduite automatiquement.
-    // Sans VoxLiso Plus, pas de traduction : lecture dans la langue d'origine.
-    final canTranslate = Premium.instance.has(PlusFeature.translation);
-    var target = _translateTo;
-    if (canTranslate && target.isEmpty && !isReadLanguage(lang)) target = s.autoTranslateTo;
+    final target = _targetFor(lang);
     if (target.isNotEmpty && target != lang) {
       final result = await _translator.translateAll(segments, lang, target);
       if (result != null) {
@@ -731,8 +935,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         Utterance(
           out[i],
           locale: locale,
-          voice: i.isOdd ? second.voice : first,
-          pitch: i.isOdd ? second.pitch : s.pitchFor(speakLang),
+          voice: (firstIndex + i).isOdd ? second.voice : first,
+          pitch: (firstIndex + i).isOdd ? second.pitch : s.pitchFor(speakLang),
         ),
     ]);
     if (s.largeMode) HapticFeedback.lightImpact();
@@ -752,6 +956,265 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       });
     }
   }
+
+  // ------------------------------------------------ repérage automatique
+
+  /// Observe l'écran quelques secondes et place la zone sur le texte qui change.
+  Future<void> _startLocate() async {
+    if (_locator != null) return;
+    if (s.screenSource && !_reading) {
+      await _toggleReading();
+      if (!_reading) return;
+    }
+    _undim();
+    setState(() {
+      _locator = SubtitleLocator();
+      _locSeconds = 0;
+    });
+    _announce('Repérage des sous-titres');
+    _locTimer?.cancel();
+    _locTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      final loc = _locator;
+      if (!mounted || _closed || loc == null) {
+        t.cancel();
+        return;
+      }
+      _locSeconds++;
+      final enough = _locSeconds >= 5 && loc.frames >= 10 && loc.distinctChanging >= 3;
+      final limit = s.screenSource ? 30 : 12;
+      if (enough || _locSeconds >= limit) {
+        t.cancel();
+        _finishLocate();
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  void _cancelLocate() {
+    _locTimer?.cancel();
+    setState(() => _locator = null);
+  }
+
+  void _finishLocate() {
+    final loc = _locator;
+    if (loc == null) return;
+    final z = loc.result();
+    setState(() => _locator = null);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (z == null) {
+      messenger?.showSnackBar(const SnackBar(
+        duration: Duration(seconds: 8),
+        content: Text('Aucun sous-titre repéré. Lancez un passage où les sous-titres '
+            'défilent, gardez le téléphone immobile et réessayez.'),
+      ));
+      _announce('Aucun sous-titre repéré');
+      return;
+    }
+    setState(() {
+      if (s.screenSource) {
+        _screenEditLandscape = _locScreenLandscape;
+        if (_locScreenLandscape) {
+          s.screenTopLandscape = z.top;
+          s.screenBottomLandscape = z.bottom;
+        } else {
+          s.screenTop = z.top;
+          s.screenBottom = z.bottom;
+        }
+      } else {
+        _setRoi(z.top, z.bottom);
+        s.roiLeft = z.left;
+        s.roiRight = z.right;
+      }
+    });
+    messenger?.showSnackBar(SnackBar(
+      duration: const Duration(seconds: 8),
+      content: Text('Zone placée sur les sous-titres (${z.subtitles} sous-titre(s) observé(s)). '
+          'Ajustez-la avec les poignées si besoin.'),
+    ));
+    _announce('Zone placée sur les sous-titres');
+  }
+
+  Widget _buildLocateButton() {
+    final running = _locator != null;
+    final limit = s.screenSource ? 30 : 12;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      OutlinedButton.icon(
+        onPressed: running ? _cancelLocate : _startLocate,
+        icon: Icon(running ? Icons.close : Icons.center_focus_strong),
+        label: Text(running
+            ? 'Repérage… $_locSeconds s (toucher pour annuler)'
+            : 'Repérer les sous-titres'),
+      ),
+      if (running) ...[
+        const SizedBox(height: 4),
+        LinearProgressIndicator(value: (_locSeconds / limit).clamp(0.0, 1.0).toDouble()),
+        const SizedBox(height: 2),
+        Text(
+          s.screenSource
+              ? 'Ouvrez votre vidéo avec les sous-titres : la zone sera placée toute seule.'
+              : 'Gardez le téléphone immobile, avec des sous-titres à l\'écran.',
+          style: Theme.of(context).textTheme.bodySmall,
+          textAlign: TextAlign.center,
+        ),
+      ],
+    ]);
+  }
+
+  // ------------------------------------------------------- écran noir
+
+  /// Programme l'écran noir après quelques secondes sans toucher l'écran.
+  void _scheduleDim() {
+    _dimTimer?.cancel();
+    if (!_reading || !s.blackScreen || s.screenSource) return;
+    _dimTimer = Timer(_dimDelay, () {
+      if (!mounted || _closed || !_reading || !s.blackScreen) return;
+      setState(() => _dimmed = true);
+      SystemBridge.setBrightness(0.01);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    });
+  }
+
+  /// Rallume l'écran (toucher), puis le réassombrit plus tard.
+  void _wake() {
+    if (_dimmed) {
+      setState(() => _dimmed = false);
+      SystemBridge.setBrightness(-1);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
+    _scheduleDim();
+  }
+
+  /// Fin de l'écran noir (lecture arrêtée, application en arrière-plan).
+  void _undim() {
+    _dimTimer?.cancel();
+    if (!_dimmed) return;
+    _dimmed = false;
+    SystemBridge.setBrightness(-1);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    if (mounted && !_closed) setState(() {});
+  }
+
+  Widget _buildDimmed() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Semantics(
+        button: true,
+        label: 'Lecture des sous-titres en cours. Touchez pour rallumer l\'écran.',
+        excludeSemantics: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _wake,
+          child: const SizedBox.expand(
+            child: Center(
+              child: Text(
+                'VoxLiso lit les sous-titres\nTouchez l\'écran pour l\'afficher',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF2B2B2B), fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------- mises à jour
+
+  /// Au démarrage : au plus une vérification toutes les 6 heures.
+  Future<void> _autoCheckUpdate() async {
+    if (!Updater.supported) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - s.lastUpdateCheck < const Duration(hours: 6).inMilliseconds) return;
+    try {
+      final info = await Updater.check();
+      s.lastUpdateCheck = now;
+      if (info != null && info.version != s.skippedVersion && mounted) {
+        setState(() => _update = info);
+      }
+    } catch (_) {}
+  }
+
+  /// Bouton « Rechercher une mise à jour » des réglages.
+  Future<String> _manualCheckUpdate() async {
+    if (!Updater.supported) return 'Mises à jour automatiques indisponibles sur cet appareil.';
+    try {
+      final info = await Updater.check();
+      s.lastUpdateCheck = DateTime.now().millisecondsSinceEpoch;
+      if (info == null) return 'VoxLiso est à jour (version $kAppVersion).';
+      s.skippedVersion = '';
+      if (mounted) setState(() => _update = info);
+      return 'Version ${info.version} disponible : touchez « Mettre à jour » en haut de l\'écran.';
+    } catch (_) {
+      return 'Impossible de joindre GitHub : vérifiez la connexion internet.';
+    }
+  }
+
+  Future<void> _runUpdate(UpdateInfo info) async {
+    final progress = ValueNotifier<double?>(null);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text('Mise à jour vers ${info.version}'),
+        content: ValueListenableBuilder<double?>(
+          valueListenable: progress,
+          builder: (context, p, child) => Column(mainAxisSize: MainAxisSize.min, children: [
+            LinearProgressIndicator(value: p),
+            const SizedBox(height: 12),
+            Text(p == null ? 'Téléchargement…' : 'Téléchargement : ${(p * 100).round()} %'),
+          ]),
+        ),
+      ),
+    );
+    String? path;
+    try {
+      path = await Updater.download(info, (p) => progress.value = p);
+    } catch (_) {}
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    final messenger = ScaffoldMessenger.of(context);
+    final browser = SnackBarAction(
+      label: 'Navigateur',
+      onPressed: () => SystemBridge.openUrl(info.url),
+    );
+    if (path == null) {
+      messenger.showSnackBar(SnackBar(
+        content: const Text('Téléchargement impossible : vérifiez la connexion internet.'),
+        action: browser,
+      ));
+      return;
+    }
+    final ok = await Updater.install(path);
+    if (!mounted) return;
+    setState(() => _update = null);
+    messenger.showSnackBar(SnackBar(
+      duration: const Duration(seconds: 8),
+      content: Text(ok
+          ? 'Android va demander de confirmer la mise à jour. La première fois, '
+              'autorisez VoxLiso à installer des applications, puis revenez.'
+          : 'Installation impossible depuis VoxLiso : ouvrez le fichier dans le navigateur.'),
+      action: ok ? null : browser,
+    ));
+  }
+
+  Widget _buildUpdateBanner(UpdateInfo info) => MaterialBanner(
+        leading: const Icon(Icons.system_update),
+        content: Text('VoxLiso ${info.version} est disponible.'),
+        actions: [
+          TextButton(
+            onPressed: () => setState(() {
+              s.skippedVersion = info.version;
+              _update = null;
+            }),
+            child: const Text('Plus tard'),
+          ),
+          FilledButton(
+            onPressed: () => _runUpdate(info),
+            child: const Text('Mettre à jour'),
+          ),
+        ],
+      );
 
   /// Redit une phrase (historique ou bouton « Répéter »).
   void _replay(HistoryEntry e) {
@@ -886,6 +1349,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       WakelockPlus.enable();
       setState(() => _reading = true);
       _announce('Lecture démarrée');
+      _scheduleDim();
     }
   }
 
@@ -895,6 +1359,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   Future<void> _stopReadingAsync() async {
     if (!_reading) return;
+    _undim();
+    _heldTimer?.cancel();
+    _held = null;
     if (mounted && !_closed) setState(() => _reading = false);
     _speech.stop();
     WakelockPlus.disable();
@@ -954,6 +1421,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           pitch: pitch,
         ),
         onResetZone: () => setState(s.resetZones),
+        onCheckUpdate: _manualCheckUpdate,
         onTutorial: () {
           Navigator.of(context).pop();
           _openTutorial();
@@ -961,6 +1429,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       ),
     );
     _speech.interrupt = s.interrupt;
+    _speech.autoRate = s.autoRate;
+    _scheduleDim(); // écran noir activé ou désactivé dans les réglages
     _tracker.stableFrames = s.stableFrames;
     _translator.deeplKey = s.deeplKey;
     if (s.photoMode != wasPhoto) await _applyAnalysisMode();
@@ -977,6 +1447,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _langDetector.close();
     _translator.close();
     _screen.dispose();
+    _dimTimer?.cancel();
+    _locTimer?.cancel();
+    _heldTimer?.cancel();
+    _speech.boost.removeListener(_onBoost);
+    if (_dimmed) {
+      SystemBridge.setBrightness(-1);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     _speech.stop();
     WakelockPlus.disable();
     super.dispose();
@@ -989,6 +1467,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final theme = Theme.of(context);
     final landscapeUi = MediaQuery.orientationOf(context) == Orientation.landscape;
     _uiLandscape = landscapeUi;
+    if (_dimmed) return _buildDimmed();
     final banner = _voiceMissing
         ? MaterialBanner(
             content: Text(
@@ -999,7 +1478,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           )
         : null;
 
-    return Scaffold(
+    // Tout toucher repousse l'écran noir.
+    return Listener(
+      onPointerDown: (_) => _scheduleDim(),
+      child: Scaffold(
       appBar: AppBar(
         toolbarHeight: landscapeUi ? 44 : null,
         title: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1032,7 +1514,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         ],
       ),
       body: SafeArea(
-        child: landscapeUi
+        child: Column(children: [
+          if (_update != null) _buildUpdateBanner(_update!),
+          Expanded(
+            child: landscapeUi
             // Paysage : aperçu à gauche, commandes à droite.
             ? Row(children: [
                 Expanded(child: Center(child: _buildPreview())),
@@ -1064,6 +1549,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                   ),
                 ),
               ]),
+          ),
+        ]),
+      ),
       ),
     );
   }
@@ -1106,6 +1594,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           onSelectionChanged: (v) => _setSource(v.first),
         ),
       ],
+      const SizedBox(height: 8),
+      _buildLocateButton(),
       if (!s.screenSource && _maxZoom > _minZoom) _buildZoom(),
       if (!s.screenSource && _maxExposure > _minExposure) _buildExposure(),
       if (a11y) ...[
@@ -1408,6 +1898,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         : s.screenSource
         ? 'Appuyez sur « Lire », autorisez la capture, puis ouvrez votre vidéo.'
         : 'Visez l\'écran, placez la bande jaune sur les sous-titres, puis appuyez sur « Lire ».';
+    final boost = _speech.boost.value;
     return Container(
       constraints: const BoxConstraints(minHeight: 72),
       padding: const EdgeInsets.all(12),
@@ -1419,7 +1910,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (s.autoLang || _translateTo.isNotEmpty)
+          if (s.autoLang || _translateTo.isNotEmpty || boost > 1.0)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
@@ -1428,6 +1919,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                   if (_translateTo.isNotEmpty)
                     'lu en ${languageFor(_translateTo).label}'
                         '${_lastOriginal.isNotEmpty && _translationEngine.isNotEmpty ? ' ($_translationEngine)' : ''}',
+                  if (boost > 1.0) 'voix accélérée ×${boost.toStringAsFixed(2).replaceAll('.', ',')}',
                 ].join(' · '),
                 style: theme.textTheme.labelMedium
                     ?.copyWith(color: theme.colorScheme.primary),
