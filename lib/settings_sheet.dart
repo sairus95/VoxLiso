@@ -622,8 +622,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
           contentPadding: EdgeInsets.zero,
           title: const Text('Écran noir pendant la lecture'),
           subtitle: const Text(
-              'Quelques secondes après « Lire », l\'écran passe au noir pour ne pas gêner '
-              'dans le noir et économiser la batterie. Touchez-le pour le rallumer.'),
+              'En option : pendant la lecture, après 8 secondes sans toucher l\'écran, il passe '
+              'au noir pour ne pas gêner dans le noir et économiser la batterie. '
+              'Touchez-le pour le rallumer.'),
           value: s.blackScreen,
           onChanged: (v) => setState(() => s.blackScreen = v),
         ),

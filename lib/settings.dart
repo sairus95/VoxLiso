@@ -176,8 +176,10 @@ class AppSettings {
   set ignoreStatic(bool v) => _prefs.setBool('ignoreStatic', v);
 
   /// Écran noir pendant la lecture (caméra) : toucher pour le rallumer.
-  bool get blackScreen => _prefs.getBool('blackScreen') ?? true;
-  set blackScreen(bool v) => _prefs.setBool('blackScreen', v);
+  /// En option, désactivé par défaut (nouvelle clé depuis la v1.0.33 : l'ancien
+  /// réglage, activé par défaut, n'est pas repris).
+  bool get blackScreen => _prefs.getBool('blackScreenOpt') ?? false;
+  set blackScreen(bool v) => _prefs.setBool('blackScreenOpt', v);
 
   /// Mises à jour : dernière vérification (ms) et version écartée (« Plus tard »).
   int get lastUpdateCheck => _prefs.getInt('lastUpdateCheck') ?? 0;

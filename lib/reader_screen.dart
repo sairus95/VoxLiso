@@ -1410,6 +1410,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
     _speech.interrupt = s.interrupt;
     _speech.autoRate = s.autoRate;
+    _scheduleDim(); // écran noir activé ou désactivé dans les réglages
     _tracker.stableFrames = s.stableFrames;
     _translator.deeplKey = s.deeplKey;
     if (s.photoMode != wasPhoto) await _applyAnalysisMode();
