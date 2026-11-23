@@ -235,11 +235,9 @@ class AppSettings {
   bool get blackScreen => _prefs.getBool('blackScreenOpt') ?? false;
   set blackScreen(bool v) => _prefs.setBool('blackScreenOpt', v);
 
-  /// Mises à jour : dernière vérification (ms) et version écartée (« Plus tard »).
+  /// Mises à jour : dernière vérification (ms).
   int get lastUpdateCheck => _prefs.getInt('lastUpdateCheck') ?? 0;
   set lastUpdateCheck(int v) => _prefs.setInt('lastUpdateCheck', v);
-  String get skippedVersion => _prefs.getString('skippedVersion') ?? '';
-  set skippedVersion(String v) => _prefs.setString('skippedVersion', v);
 
   /// Image renforcée (zone recadrée, contrastée, agrandie) quand rien n'est lu.
   bool get enhance => _prefs.getBool('enhance') ?? true;

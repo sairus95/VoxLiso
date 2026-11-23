@@ -1226,7 +1226,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   // ------------------------------------------------------- mises à jour
 
-  /// Au démarrage : au plus une vérification toutes les 6 heures.
+  /// Au démarrage : au plus une vérification toutes les 6 heures. Rien ne
+  /// s'affiche sur l'écran principal : la version trouvée est proposée dans
+  /// les réglages, sous « Rechercher une mise à jour ».
   Future<void> _autoCheckUpdate() async {
     if (!Updater.supported) return;
     await Updater.cleanUp(s); // APK de la mise à jour déjà installée : effacé
@@ -1235,24 +1237,24 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     try {
       final info = await Updater.check();
       s.lastUpdateCheck = now;
-      if (info != null && info.version != s.skippedVersion && mounted) {
-        setState(() => _update = info);
-      }
+      if (info != null) _update = info;
     } catch (_) {}
   }
 
-  /// Bouton « Rechercher une mise à jour » des réglages.
-  Future<String> _manualCheckUpdate() async {
-    if (!Updater.supported) return 'Mises à jour automatiques indisponibles sur cet appareil.';
+  /// Bouton « Rechercher une mise à jour » des réglages : message à afficher
+  /// et version trouvée (bouton « Mettre à jour » juste en dessous).
+  Future<UpdateCheck> _manualCheckUpdate() async {
+    if (!Updater.supported) {
+      return (message: 'Mises à jour automatiques indisponibles sur cet appareil.', update: null);
+    }
     try {
       final info = await Updater.check();
       s.lastUpdateCheck = DateTime.now().millisecondsSinceEpoch;
-      if (info == null) return 'VoxLiso est à jour (version $kAppVersion).';
-      s.skippedVersion = '';
-      if (mounted) setState(() => _update = info);
-      return 'Version ${info.version} disponible : touchez « Mettre à jour » en haut de l\'écran.';
+      _update = info;
+      if (info == null) return (message: 'VoxLiso est à jour (version $kAppVersion).', update: null);
+      return (message: 'Version ${info.version} disponible.', update: info);
     } catch (_) {
-      return 'Impossible de joindre GitHub : vérifiez la connexion internet.';
+      return (message: 'Impossible de joindre GitHub : vérifiez la connexion internet.', update: _update);
     }
   }
 
@@ -1333,7 +1335,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (!mounted) return;
     final ok = await Updater.install(path);
     if (!mounted) return;
-    setState(() => _update = null);
+    _update = null;
     messenger.showSnackBar(SnackBar(
       duration: const Duration(seconds: 8),
       content: Text(ok
@@ -1354,24 +1356,6 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     await done.future;
     listener.dispose();
   }
-
-  Widget _buildUpdateBanner(UpdateInfo info) => MaterialBanner(
-        leading: const Icon(Icons.system_update),
-        content: Text('VoxLiso ${info.version} est disponible.'),
-        actions: [
-          TextButton(
-            onPressed: () => setState(() {
-              s.skippedVersion = info.version;
-              _update = null;
-            }),
-            child: const Text('Plus tard'),
-          ),
-          FilledButton(
-            onPressed: () => _runUpdate(info),
-            child: const Text('Mettre à jour'),
-          ),
-        ],
-      );
 
   /// Redit une phrase (historique ou bouton « Répéter »).
   void _replay(HistoryEntry e) {
@@ -1612,7 +1596,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           pitch: pitch,
         ),
         onResetZone: () => setState(s.resetZones),
+        update: _update,
         onCheckUpdate: _manualCheckUpdate,
+        onUpdate: (info) {
+          // Réglages fermés : la progression et la demande d'Android s'affichent.
+          Navigator.of(context).pop();
+          _runUpdate(info);
+        },
         onTutorial: () {
           Navigator.of(context).pop();
           _openTutorial();
@@ -1709,7 +1699,6 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       ),
       body: SafeArea(
         child: Column(children: [
-          if (_update != null) _buildUpdateBanner(_update!),
           Expanded(
             child: landscapeUi
             // Paysage : aperçu à gauche, commandes à droite.
