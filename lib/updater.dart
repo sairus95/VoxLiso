@@ -23,6 +23,9 @@ class UpdateInfo {
   final int size;
 }
 
+/// Résultat du bouton « Rechercher une mise à jour » : message et version trouvée.
+typedef UpdateCheck = ({String message, UpdateInfo? update});
+
 /// Mises à jour sans Play Store : VoxLiso regarde la dernière version publiée
 /// sur GitHub (page « Releases ») et l'installe (Android).
 class Updater {

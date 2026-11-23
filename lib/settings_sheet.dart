@@ -29,6 +29,8 @@ class SettingsSheet extends StatefulWidget {
     required this.onResetZone,
     required this.onTutorial,
     required this.onCheckUpdate,
+    required this.onUpdate,
+    this.update,
   });
 
   final AppSettings settings;
@@ -56,8 +58,14 @@ class SettingsSheet extends StatefulWidget {
   final VoidCallback onResetZone;
   final VoidCallback onTutorial;
 
-  /// Recherche une nouvelle version ; renvoie le message à afficher.
-  final Future<String> Function() onCheckUpdate;
+  /// Nouvelle version déjà trouvée (vérification au démarrage), ou null.
+  final UpdateInfo? update;
+
+  /// Recherche une nouvelle version : message à afficher et version trouvée.
+  final Future<UpdateCheck> Function() onCheckUpdate;
+
+  /// Télécharge et installe la version trouvée.
+  final void Function(UpdateInfo info) onUpdate;
 
   @override
   State<SettingsSheet> createState() => _SettingsSheetState();
@@ -75,6 +83,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
   String? _azureResult;
   bool _checkingUpdate = false;
   String? _updateResult;
+  late UpdateInfo? _update = widget.update;
 
   @override
   void dispose() {
@@ -956,11 +965,12 @@ class _SettingsSheetState extends State<SettingsSheet> {
                         _checkingUpdate = true;
                         _updateResult = null;
                       });
-                      final msg = await widget.onCheckUpdate();
+                      final r = await widget.onCheckUpdate();
                       if (mounted) {
                         setState(() {
                           _checkingUpdate = false;
-                          _updateResult = msg;
+                          _updateResult = r.message;
+                          _update = r.update;
                         });
                       }
                     },
@@ -972,7 +982,20 @@ class _SettingsSheetState extends State<SettingsSheet> {
             ),
           ),
           if (_updateResult != null)
-            Text(_updateResult!, style: theme.textTheme.bodySmall),
+            Text(_updateResult!, style: theme.textTheme.bodySmall)
+          else if (_update != null)
+            Text('Version ${_update!.version} disponible.', style: theme.textTheme.bodySmall),
+          if (_update != null) ...[
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: () => widget.onUpdate(_update!),
+                icon: const Icon(Icons.download),
+                label: Text('Mettre à jour vers la ${_update!.version}'),
+              ),
+            ),
+          ],
         ],
       ];
 }
