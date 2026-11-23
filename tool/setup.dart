@@ -163,11 +163,20 @@ bool _screenCapture(File gradle) {
   }
   manifest.writeAsStringSync(xml);
 
+  // Moteurs de reconnaissance : latin, plus chinois, japonais et coréen
+  // (le module Flutter ne les déclare qu'en « compileOnly »).
   var g = gradle.readAsStringSync();
-  if (!g.contains('com.google.mlkit:text-recognition')) {
-    g = gradle.path.endsWith('.kts')
-        ? '$g\ndependencies {\n    implementation("com.google.mlkit:text-recognition:16.0.1")\n}\n'
-        : "$g\ndependencies {\n    implementation 'com.google.mlkit:text-recognition:16.0.1'\n}\n";
+  const mlkit = [
+    'com.google.mlkit:text-recognition:16.0.1',
+    'com.google.mlkit:text-recognition-chinese:16.0.1',
+    'com.google.mlkit:text-recognition-japanese:16.0.1',
+    'com.google.mlkit:text-recognition-korean:16.0.1',
+  ];
+  final missing = [for (final m in mlkit) if (!g.contains(m)) m];
+  if (missing.isNotEmpty) {
+    final kts = gradle.path.endsWith('.kts');
+    final lines = [for (final m in missing) kts ? '    implementation("$m")' : "    implementation '$m'"];
+    g = '$g\ndependencies {\n${lines.join('\n')}\n}\n';
     gradle.writeAsStringSync(g);
   }
   stdout.writeln('✔ Lecture de l\'écran du téléphone : service natif ($pkg)');
@@ -220,6 +229,12 @@ bool _ios() {
       RegExp(r"^#?\s*platform :ios, '[\d.]+'", multiLine: true),
       "platform :ios, '$iosTarget'",
     );
+    // Reconnaissance du chinois, du japonais et du coréen (même version de ML Kit
+    // que google_mlkit_text_recognition 0.17).
+    const flutterPods = 'flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))';
+    if (!pod.contains('TextRecognitionChinese') && pod.contains(flutterPods)) {
+      pod = pod.replaceFirst(flutterPods, '$flutterPods\n$_cjkPods');
+    }
     // Les « bundles » de ressources des pods (ML Kit…) n'ont pas à être signés.
     const marker = 'flutter_additional_ios_build_settings(target)';
     if (!pod.contains('CODE_SIGNING_ALLOWED') && pod.contains(marker)) {
@@ -266,6 +281,10 @@ void _removeDefaultWidgetTest() {
   if (t.existsSync() && t.readAsStringSync().contains('MyApp')) t.deleteSync();
 }
 
+const _cjkPods = "  pod 'GoogleMLKit/TextRecognitionChinese', '~> 9.0.0'\n"
+    "  pod 'GoogleMLKit/TextRecognitionJapanese', '~> 9.0.0'\n"
+    "  pod 'GoogleMLKit/TextRecognitionKorean', '~> 9.0.0'";
+
 const _podfile = '''
 platform :ios, '$iosTarget'
 
@@ -299,6 +318,9 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  pod 'GoogleMLKit/TextRecognitionChinese', '~> 9.0.0'
+  pod 'GoogleMLKit/TextRecognitionJapanese', '~> 9.0.0'
+  pod 'GoogleMLKit/TextRecognitionKorean', '~> 9.0.0'
 end
 
 post_install do |installer|

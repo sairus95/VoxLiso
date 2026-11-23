@@ -5,6 +5,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_tts/flutter_tts.dart';
 
+import 'languages.dart' show speechWeight;
 import 'rate_pacer.dart';
 import 'voices.dart';
 
@@ -116,7 +117,8 @@ class SpeechService {
     if (autoRate && !interrupt) {
       // Retard = texte encore à dire alors qu'un sous-titre suivant est déjà arrivé.
       final behind = _queue.any((e) => e.batch != batch);
-      final waiting = behind ? _queue.fold<int>(0, (n, e) => n + e.u.text.length) : 0;
+      // En chinois, japonais et coréen, un caractère se dit plus lentement : il compte triple.
+      final waiting = behind ? _queue.fold<int>(0, (n, e) => n + speechWeight(e.u.text)) : 0;
       factor = _pacer.next(waiting);
     } else {
       _pacer.reset();

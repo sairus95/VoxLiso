@@ -64,6 +64,14 @@ class ScreenCapture {
     }, onError: (_) {});
   }
 
+  /// Écriture des sous-titres lus à l'écran (latin, chinese, japanese, korean).
+  Future<void> setScript(String script) async {
+    if (!isAvailable) return;
+    try {
+      await _method.invokeMethod<bool>('setScript', {'script': script});
+    } catch (_) {}
+  }
+
   /// Demande l'autorisation de capture puis démarre. Renvoie false si refusé.
   Future<bool> start() async {
     if (!isAvailable) return false;

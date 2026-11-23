@@ -167,12 +167,7 @@ class SubtitleTranslator {
         'text': texts,
         // DeepL écrit le norvégien « NB ».
         'source_lang': from == 'no' ? 'NB' : from.toUpperCase(),
-        // DeepL veut une variante pour l'anglais et le portugais traduits.
-        'target_lang': switch (to) {
-          'en' => 'EN-US',
-          'pt' => 'PT-PT',
-          _ => to.toUpperCase(),
-        },
+        'target_lang': deeplTarget(to),
       }));
       final res = await req.close().timeout(const Duration(seconds: 5));
       final body = await res.transform(utf8.decoder).join();
@@ -207,11 +202,22 @@ class SubtitleTranslator {
     return r?.first;
   }
 
+  /// Langue cible pour DeepL : variante pour l'anglais, le portugais et le
+  /// chinois (simplifié), « NB » pour le norvégien.
+  static String deeplTarget(String to) => switch (to) {
+        'en' => 'EN-US',
+        'pt' => 'PT-PT',
+        'zh' => 'ZH-HANS',
+        'no' => 'NB',
+        _ => to.toUpperCase(),
+      };
+
   /// Code de langue pour Azure : norvégien « nb », tagalog « fil », et
   /// portugais du Portugal (« pt-pt ») en traduction, comme la voix pt-PT.
   static String azureLang(String code, {bool target = false}) => switch (code) {
         'no' => 'nb',
         'tl' => 'fil',
+        'zh' => 'zh-Hans',
         'pt' when target => 'pt-pt',
         _ => code,
       };

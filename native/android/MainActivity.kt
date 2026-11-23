@@ -41,6 +41,10 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "isSupported" -> result.success(Build.VERSION.SDK_INT >= 24)
                 "isRunning" -> result.success(ScreenCaptureService.running)
+                "setScript" -> {
+                    ScreenCaptureService.script = call.argument<String>("script") ?: "latin"
+                    result.success(true)
+                }
                 "start" -> {
                     if (ScreenCaptureService.running) {
                         result.success(true)

@@ -152,6 +152,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
             const SizedBox(height: 16),
             ..._accessibilitySection(theme),
             const Divider(height: 32),
+            ..._languagesSection(theme),
+            const Divider(height: 32),
             ..._voiceSection(theme),
             const Divider(height: 32),
             ..._translationSection(theme),
@@ -161,6 +163,78 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ),
       ),
     );
+  }
+
+  // ---------------------------------------------------------------- langues
+
+  /// Langues qu'on entend : lues telles quelles, et langues de traduction.
+  List<SubtitleLanguage> get _heardLanguages {
+    final read = s.readLanguages;
+    return [
+      for (final l in kLanguages)
+        if (read.contains(l.code) ||
+            l.code == s.translateTo ||
+            l.code == s.autoTranslateTo ||
+            l.code == widget.voice.code)
+          l,
+    ];
+  }
+
+  List<Widget> _languagesSection(ThemeData theme) {
+    final read = s.readLanguages;
+    final script = s.ocrScript;
+    return [
+      Text('Langues des sous-titres', style: theme.textTheme.titleMedium),
+      const SizedBox(height: 4),
+      Text(
+        'Cochez les langues à entendre telles quelles : elles apparaissent dans la barre de '
+        'langue. En mode Auto, un sous-titre dans une autre langue est traduit '
+        '(voir « Traduction »).',
+        style: theme.textTheme.bodySmall,
+      ),
+      const SizedBox(height: 8),
+      Wrap(spacing: 6, runSpacing: 4, children: [
+        for (final l in kLanguages)
+          FilterChip(
+            label: Text(l.label),
+            selected: read.contains(l.code),
+            onSelected: (on) => setState(() {
+              final next = [
+                for (final x in kLanguages)
+                  if (x.code == l.code ? on : read.contains(x.code)) x.code,
+              ];
+              if (next.isNotEmpty) s.readLanguages = next; // au moins une langue
+            }),
+          ),
+      ]),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<SubtitleScript>(
+        key: ValueKey('script-${script.name}'),
+        initialValue: script,
+        isExpanded: true,
+        decoration: const InputDecoration(labelText: 'Écriture des sous-titres'),
+        items: [
+          for (final sc in SubtitleScript.values)
+            DropdownMenuItem(
+              value: sc,
+              child: Text(switch (sc) {
+                SubtitleScript.latin => 'Latine (français, anglais, polonais…)',
+                SubtitleScript.chinese => 'Chinoise (中文)',
+                SubtitleScript.japanese => 'Japonaise (日本語)',
+                SubtitleScript.korean => 'Coréenne (한국어)',
+              }),
+            ),
+        ],
+        onChanged: (v) => setState(() => s.ocrScript = v ?? SubtitleScript.latin),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        'Choisie toute seule quand vous touchez une langue dans la barre. Les écritures '
+        'chinoise, japonaise et coréenne lisent aussi l\'alphabet latin ; utile en mode Auto '
+        'pour des sous-titres en chinois, japonais ou coréen.',
+        style: theme.textTheme.bodySmall,
+      ),
+    ];
   }
 
   // --------------------------------------------------------- accessibilité
@@ -246,7 +320,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
         const SizedBox(height: 12),
       ],
       Wrap(spacing: 8, children: [
-        for (final l in kLanguages)
+        for (final l in _heardLanguages)
           ChoiceChip(
             label: Text(l.label),
             selected: _voiceLang == l.code,
@@ -465,7 +539,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
         initialValue: s.autoTranslateTo,
         isExpanded: true,
         decoration: const InputDecoration(
-          labelText: 'Sous-titres en néerlandais, polonais… : traduire en',
+          labelText: 'Sous-titres dans une langue non cochée : traduire en',
         ),
         items: [
           for (final l in kLanguages) DropdownMenuItem(value: l.code, child: Text(l.label)),
@@ -474,8 +548,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
       ),
       const SizedBox(height: 4),
       Text(
-        'En mode Auto, VoxLiso reconnaît aussi le néerlandais, le roumain, '
-        'le polonais… et les traduit automatiquement. La langue nécessaire se télécharge '
+        'En mode Auto, un sous-titre dans une langue non cochée dans « Langues des '
+        'sous-titres » (ou en slovène, vietnamien, indonésien…) est traduit automatiquement. '
+        'La langue nécessaire se télécharge '
         'toute seule en Wi-Fi au premier besoin (environ 30 Mo). Avec une clé DeepL, la '
         'traduction est immédiate et de meilleure qualité.',
         style: theme.textTheme.bodySmall,
@@ -633,6 +708,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
         const SizedBox(height: 12),
         Text('Traduction hors ligne : langues téléchargées', style: theme.textTheme.titleSmall),
         for (final l in kLanguages)
+          if (_heardLanguages.contains(l) ||
+              t.isDownloading(l.code) ||
+              (t.knownDownloaded(l.code) ?? false))
           ListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,

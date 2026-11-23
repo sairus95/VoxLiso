@@ -1,3 +1,4 @@
+import 'languages.dart' show isCjkRune;
 import 'spell_fixer.dart' show WordList;
 import 'text_tools.dart';
 
@@ -60,7 +61,7 @@ class ReadingVote {
     if (rs.isEmpty) return '';
     if (rs.length == 1) return rs.first.text.trim();
 
-    final toks = [for (final r in rs) _tokens(r.text)];
+    final toks = [for (final r in rs) tokens(r.text)];
     final norms = [
       for (final t in toks) [for (final w in t) _norm(w)],
     ];
@@ -128,7 +129,22 @@ class ReadingVote {
       if (gaps[k] * _gapVote > bestScore) continue;
       out.add(bestWord!);
     }
-    return out.join(' ').trim();
+    return joinTokens(out);
+  }
+
+  /// Réunit des mots : avec des espaces, sauf autour d'un caractère chinois
+  /// ou japonais (ces écritures n'en mettent pas entre les mots).
+  static String joinTokens(List<String> tokens) {
+    final sb = StringBuffer();
+    for (var i = 0; i < tokens.length; i++) {
+      if (i > 0 &&
+          !isCjkRune(tokens[i - 1].runes.last) &&
+          !isCjkRune(tokens[i].runes.first)) {
+        sb.write(' ');
+      }
+      sb.write(tokens[i]);
+    }
+    return sb.toString().trim();
   }
 
   /// Le mot existe-t-il dans la langue ? (« l'école » : « école » suffit.)
@@ -160,10 +176,30 @@ class ReadingVote {
     return best!;
   }
 
-  static List<String> _tokens(String text) => [
-        for (final w in text.trim().split(_spaces))
-          if (w.isNotEmpty) w,
-      ];
+  /// Mots d'une lecture : séparés par les espaces ; en chinois et en japonais,
+  /// chaque caractère compte comme un mot (pas d'espaces entre les mots).
+  static List<String> tokens(String text) {
+    final out = <String>[];
+    final word = StringBuffer();
+    void flush() {
+      if (word.isNotEmpty) out.add(word.toString());
+      word.clear();
+    }
+
+    for (final r in text.trim().runes) {
+      final ch = String.fromCharCode(r);
+      if (isCjkRune(r)) {
+        flush();
+        out.add(ch);
+      } else if (_spaces.hasMatch(ch)) {
+        flush();
+      } else {
+        word.write(ch);
+      }
+    }
+    flush();
+    return out;
+  }
 
   static String _norm(String token) {
     final n = normalizeForCompare(token);
