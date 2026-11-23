@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'languages.dart';
 import 'voices.dart';
 import 'version.dart';
 
@@ -26,6 +27,24 @@ class AppSettings {
   String get lang => _prefs.getString('lang') ?? 'auto';
   set lang(String v) => _prefs.setString('lang', v);
   bool get autoLang => lang == 'auto';
+
+  /// Langues lues telles quelles (boutons de la barre de langue). En mode Auto,
+  /// un sous-titre dans une autre langue est traduit ([autoTranslateTo]).
+  List<String> get readLanguages {
+    final saved = _prefs.getStringList('readLanguages');
+    final list = [
+      for (final l in kLanguages)
+        if ((saved ?? kDefaultReadLanguages).contains(l.code)) l.code,
+    ];
+    return list.isEmpty ? List.of(kDefaultReadLanguages) : list;
+  }
+
+  set readLanguages(List<String> v) => _prefs.setStringList('readLanguages', v);
+
+  /// Écriture des sous-titres (moteur de reconnaissance) : latin, chinese,
+  /// japanese, korean. Choisie toute seule quand on choisit une langue.
+  SubtitleScript get ocrScript => SubtitleScript.fromName(_prefs.getString('ocrScript') ?? 'latin');
+  set ocrScript(SubtitleScript v) => _prefs.setString('ocrScript', v.name);
 
   /// Dernière langue détectée en mode automatique.
   String get detectedLang => _prefs.getString('detectedLang') ?? 'fr';

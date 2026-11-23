@@ -28,7 +28,13 @@ class LanguageDecision {
   /// [scores] : code de langue -> confiance (0..1), tel que renvoyé par ML Kit.
   /// Renvoie la langue à utiliser pour ce sous-titre.
   String update(String text, Map<String, double> scores) {
-    final letters = RegExp(r'\p{L}', unicode: true).allMatches(text).length;
+    // Un idéogramme, un kana ou une syllabe coréenne compte pour trois lettres :
+    // « 你在做什么 » est aussi parlant qu'une phrase de quinze lettres.
+    var letters = 0;
+    for (final m in RegExp(r'\p{L}', unicode: true).allMatches(text)) {
+      final r = m.group(0)!.runes.first;
+      letters += isCjkRune(r) || isHangulRune(r) ? 3 : 1;
+    }
     if (letters < minLetters) return current;
 
     String? best;

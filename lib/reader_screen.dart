@@ -45,7 +45,9 @@ class ReaderScreen extends StatefulWidget {
 }
 
 class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver {
-  final TextRecognizer _recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+  /// Moteur de reconnaissance, selon l'écriture des sous-titres (latin, chinois…).
+  SubtitleScript _script = SubtitleScript.latin;
+  TextRecognizer _recognizer = TextRecognizer(script: TextRecognitionScript.latin);
   final SpeechService _speech = SpeechService();
   late final SubtitleTracker _tracker;
   late final LanguageDetector _langDetector;
@@ -172,6 +174,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     Premium.instance.addListener(_onPremium);
     // Lecture de l'écran réservée à VoxLiso Plus.
     if (s.screenSource && !Premium.instance.has(PlusFeature.screen)) s.source = 'camera';
+    _applyScript();
     if (ScreenCapture.isAvailable) {
       _screen.listen();
       _screen.frames.listen(_onScreenFrame);
@@ -469,6 +472,15 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         if (key.isEmpty) continue;
         final prev = out[key];
         if (prev == null || c > prev) out[key] = c;
+        // Chinois, japonais : le vote compare caractère par caractère.
+        if (hasCjk(e.text)) {
+          for (final r in e.text.runes) {
+            if (!isCjkRune(r)) continue;
+            final ch = String.fromCharCode(r);
+            final p = out[ch];
+            if (p == null || c > p) out[ch] = c;
+          }
+        }
       }
     }
     return out;
@@ -1003,7 +1015,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   String _targetFor(String lang) {
     if (!Premium.instance.has(PlusFeature.translation)) return '';
     var target = s.translateTo;
-    if (target.isEmpty && !isReadLanguage(lang)) target = s.autoTranslateTo;
+    // Langue non cochée dans « Langues des sous-titres » : traduite.
+    if (target.isEmpty && !s.readLanguages.contains(lang)) target = s.autoTranslateTo;
     return target;
   }
 
@@ -1548,9 +1561,43 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   Future<void> _setLanguage(String code) async {
     s.lang = code;
+    // Chinois, japonais, coréen : leur moteur de reconnaissance (qui lit aussi le latin).
+    if (code != 'auto') s.ocrScript = languageFor(code).script;
+    _applyScript();
     _tracker.reset();
     setState(() {});
     await _applyVoice();
+  }
+
+  /// Langues de la barre : celles cochées dans les réglages, plus la langue
+  /// choisie si elle n'y est plus.
+  List<SubtitleLanguage> get _barLanguages {
+    final codes = s.readLanguages;
+    return [
+      for (final l in kLanguages)
+        if (codes.contains(l.code) || l.code == s.lang) l,
+    ];
+  }
+
+  static TextRecognitionScript _mlkitScript(SubtitleScript script) => switch (script) {
+        SubtitleScript.latin => TextRecognitionScript.latin,
+        SubtitleScript.chinese => TextRecognitionScript.chinese,
+        SubtitleScript.japanese => TextRecognitionScript.japanese,
+        SubtitleScript.korean => TextRecognitionScript.korean,
+      };
+
+  /// Applique l'écriture des sous-titres choisie : autre moteur de reconnaissance
+  /// (caméra et écran du téléphone) si elle a changé.
+  void _applyScript() {
+    final want = s.ocrScript;
+    _screen.setScript(want.name);
+    if (want == _script) return;
+    final old = _recognizer;
+    _recognizer = TextRecognizer(script: _mlkitScript(want));
+    _script = want;
+    _tracker.reset();
+    // L'ancien moteur lit peut-être encore une image : fermé un peu plus tard.
+    Future<void>.delayed(const Duration(seconds: 2), old.close);
   }
 
   Future<void> _setZoom(double z) async {
@@ -1608,6 +1655,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
     _speech.interrupt = s.interrupt;
     _speech.autoRate = s.autoRate;
+    _applyScript(); // écriture des sous-titres changée dans les réglages
     _scheduleDim(); // écran noir activé ou désactivé dans les réglages
     _tracker.stableFrames = s.stableFrames;
     _translator
@@ -1784,27 +1832,54 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _buildZoneButtons(large),
       ],
       const SizedBox(height: 8),
-      FittedBox(
-        fit: BoxFit.scaleDown,
-        child: SegmentedButton<String>(
-        segments: [
-          const ButtonSegment(
-            value: 'auto',
-            label: Text('Auto'),
-            tooltip: 'Détection automatique de la langue',
+      if (_barLanguages.length <= 6)
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: SegmentedButton<String>(
+            segments: [
+              const ButtonSegment(
+                value: 'auto',
+                label: Text('Auto'),
+                tooltip: 'Détection automatique de la langue',
+              ),
+              for (final l in _barLanguages)
+                ButtonSegment(value: l.code, label: Text(l.short), tooltip: l.label),
+            ],
+            selected: {s.lang},
+            showSelectedIcon: false,
+            style: ButtonStyle(
+              visualDensity: large ? VisualDensity.standard : VisualDensity.compact,
+              minimumSize: large ? const WidgetStatePropertyAll(Size(0, 56)) : null,
+            ),
+            onSelectionChanged: (v) => _setLanguage(v.first),
           ),
-          for (final l in kLanguages)
-            ButtonSegment(value: l.code, label: Text(l.short), tooltip: l.label),
-        ],
-        selected: {s.lang},
-        showSelectedIcon: false,
-        style: ButtonStyle(
-          visualDensity: large ? VisualDensity.standard : VisualDensity.compact,
-          minimumSize: large ? const WidgetStatePropertyAll(Size(0, 56)) : null,
+        )
+      else
+        // Plus de 6 langues : une rangée de boutons qu'on fait défiler.
+        SizedBox(
+          height: large ? 56 : 40,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              for (final (code, label, tip) in [
+                ('auto', 'Auto', 'Détection automatique de la langue'),
+                for (final l in _barLanguages) (l.code, l.short, l.label),
+              ])
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Tooltip(
+                    message: tip,
+                    child: ChoiceChip(
+                      label: Text(label),
+                      selected: s.lang == code,
+                      showCheckmark: false,
+                      onSelected: (_) => _setLanguage(code),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
-        onSelectionChanged: (v) => _setLanguage(v.first),
-      ),
-      ),
       const SizedBox(height: 12),
       SizedBox(
         height: large ? 104 : 64,

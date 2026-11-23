@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 
+import 'languages.dart' show isCjkRune;
+
 final RegExp _soundTags = RegExp(r'\[[^\]]*\]|\([^)]*\)');
 final RegExp _junkChars = RegExp(r'[♪♫#*|¦_~<>{}\\]');
-final RegExp _dialogueDash = RegExp(r'^[-–—]+\s*');
+final RegExp _dialogueDash = RegExp(r'^[-–—－]+\s*');
 final RegExp _inlineDialogue = RegExp(r'(?<=[.!?…])\s+[-–—]\s+');
 final RegExp _letter = RegExp(r'\p{L}', unicode: true);
-final RegExp _endsWithPunct = RegExp(r'[.!?…:;,]$');
+final RegExp _endsWithPunct = RegExp(r'[.!?…:;,。！？、，：；]$');
 final RegExp _spaces = RegExp(r'\s+');
 
 /// Transforme les lignes lues par l'OCR en une phrase prête à être dite.
@@ -46,7 +48,13 @@ List<String> subtitleParts(List<String> lines, {bool removeSoundTags = true}) {
       }
     }
     if (line.isEmpty) continue;
-    buffer = buffer.isEmpty ? line : '$buffer $line';
+    // Chinois, japonais : deux lignes se suivent sans espace.
+    final glue = buffer.isNotEmpty &&
+            isCjkRune(buffer.runes.last) &&
+            isCjkRune(line.runes.first)
+        ? ''
+        : ' ';
+    buffer = buffer.isEmpty ? line : '$buffer$glue$line';
   }
   if (buffer.isNotEmpty) parts.add(buffer);
 
@@ -54,7 +62,10 @@ List<String> subtitleParts(List<String> lines, {bool removeSoundTags = true}) {
   // d'origine, pour savoir si la phrase continue dans le sous-titre suivant.
   if (parts.length > 1) {
     for (var i = 0; i < parts.length - 1; i++) {
-      if (!_endsWithPunct.hasMatch(parts[i])) parts[i] = '${parts[i]}.';
+      if (_endsWithPunct.hasMatch(parts[i])) continue;
+      // Chinois, japonais : point « 。 » ; ailleurs « . ».
+      final last = parts[i].runes.isEmpty ? 0 : parts[i].runes.last;
+      parts[i] = '${parts[i]}${isCjkRune(last) ? '。' : '.'}';
     }
   }
   return [
@@ -80,9 +91,26 @@ const Map<String, String> _accents = {
   'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u',
   'ý': 'y', 'ÿ': 'y',
   'ß': 'ss', 'œ': 'oe', 'æ': 'ae',
+  // Langues d'Europe centrale et du Nord, roumain, turc
+  'ą': 'a', 'ă': 'a', 'ā': 'a',
+  'ć': 'c', 'č': 'c',
+  'ď': 'd', 'đ': 'd',
+  'ę': 'e', 'ě': 'e', 'ē': 'e',
+  'ğ': 'g',
+  'ı': 'i', 'ī': 'i',
+  'ł': 'l', 'ľ': 'l', 'ĺ': 'l',
+  'ń': 'n', 'ň': 'n',
+  'ő': 'o', 'ø': 'o',
+  'ř': 'r', 'ŕ': 'r',
+  'ś': 's', 'š': 's', 'ş': 's', 'ș': 's',
+  'ť': 't', 'ţ': 't', 'ț': 't',
+  'ů': 'u', 'ű': 'u', 'ū': 'u',
+  'ź': 'z', 'ż': 'z', 'ž': 'z',
 };
 
-final RegExp _nonAlnum = RegExp(r'[^a-z0-9]+');
+/// Tout sauf les lettres et chiffres (de toutes les écritures : latin,
+/// chinois, japonais, coréen…).
+final RegExp _nonAlnum = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
 
 final RegExp _edgeEllipsis = RegExp(r'^(\.{2,}|…)\s*|\s*(\.{2,}|…)$');
 

@@ -24,6 +24,10 @@ import android.util.DisplayMetrics
 import android.view.WindowManager
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlin.math.max
 import kotlin.math.min
@@ -57,6 +61,16 @@ class ScreenCaptureService : Service() {
 
         /** Prévenu quand la capture s'arrête (bouton « Arrêter », fin d'autorisation…). */
         var onStopped: (() -> Unit)? = null
+
+        /** Écriture des sous-titres : latin, chinese, japanese, korean. */
+        @Volatile var script = "latin"
+
+        private fun clientFor(script: String): TextRecognizer = when (script) {
+            "chinese" -> TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+            "japanese" -> TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
+            "korean" -> TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+            else -> TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        }
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -65,7 +79,8 @@ class ScreenCaptureService : Service() {
     private var projection: MediaProjection? = null
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
-    private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private var recognizerScript = script
+    private var recognizer: TextRecognizer = clientFor(recognizerScript)
 
     @Volatile private var busy = false
     private var stopping = false
@@ -225,6 +240,13 @@ class ScreenCaptureService : Service() {
         busy = true
         val w = bitmap.width.toFloat()
         val h = bitmap.height.toFloat()
+        // Écriture changée dans VoxLiso : nouveau moteur de reconnaissance.
+        val wanted = script
+        if (wanted != recognizerScript) {
+            recognizer.close()
+            recognizer = clientFor(wanted)
+            recognizerScript = wanted
+        }
         recognizer.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener { text ->
                 val lines = ArrayList<Map<String, Any>>()

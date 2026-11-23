@@ -52,7 +52,10 @@ class SpellFixer {
   final Map<String, Future<WordList?>> _loading = {};
 
   /// Langues ayant un dictionnaire.
-  static const Set<String> languages = {'fr', 'de', 'es', 'it', 'en', 'pt'};
+  static const Set<String> languages = {
+    'fr', 'de', 'es', 'it', 'en', 'pt', //
+    'nl', 'pl', 'ro', 'sv', 'da', 'no', 'fi', 'cs', 'sk', 'hu', 'tr', 'ca', 'hr',
+  };
 
   /// Dictionnaire déjà chargé (sinon null : appeler [load]).
   WordList? loaded(String lang) => _lists[lang];

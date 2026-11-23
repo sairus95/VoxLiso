@@ -1,3 +1,5 @@
+import 'languages.dart' show isCjkRune;
+
 /// Phrases coupées entre deux sous-titres (« Je pense que… » / « …tu as raison »).
 ///
 /// Pour la traduction, une phrase traduite en deux morceaux donne souvent un
@@ -42,9 +44,11 @@ class SentenceJoiner {
       'me', 'te', 'lhe', },
   };
 
-  static final RegExp _ellipsisEnd = RegExp(r'(\.\.+|…)\s*$');
-  static final RegExp _ellipsisStart = RegExp(r'^\s*(\.\.+|…)\s*');
-  static final RegExp _openPunctEnd = RegExp(r'[,;:–—-]\s*$');
+  // « … », « ... » et, en chinois, « ⋯ ».
+  static final RegExp _ellipsisEnd = RegExp(r'(\.\.+|…+|⋯+)\s*$');
+  static final RegExp _ellipsisStart = RegExp(r'^\s*(\.\.+|…+|⋯+)\s*');
+  // Virgule, deux-points… y compris les formes chinoises et japonaises (，、：；).
+  static final RegExp _openPunctEnd = RegExp(r'[,;:–—\-，、：；]\s*$');
   static final RegExp _lastWord = RegExp(r"([\p{L}']+)\s*$", unicode: true);
 
   /// Le sous-titre appelle-t-il une suite ?
@@ -77,6 +81,8 @@ class SentenceJoiner {
     final b = second.trim().replaceFirst(_ellipsisStart, '');
     if (a.isEmpty) return b;
     if (b.isEmpty) return a;
+    // Chinois, japonais : pas d'espace entre les mots.
+    if (isCjkRune(a.runes.last) || isCjkRune(b.runes.first)) return '$a$b';
     return '$a $b';
   }
 }

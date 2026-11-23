@@ -31,7 +31,15 @@ class TtsVoice {
   final bool notInstalled;
 
   /// Code de la langue (fr, de, es, it).
-  String get lang => locale.split(RegExp('[-_]')).first.toLowerCase();
+  String get lang {
+    final code = locale.split(RegExp('[-_]')).first.toLowerCase();
+    // Norvégien « nb » / « nn », mandarin « cmn » : codes de VoxLiso « no » et « zh ».
+    return switch (code) {
+      'nb' || 'nn' => 'no',
+      'cmn' => 'zh',
+      _ => code,
+    };
+  }
 
   String get key => '$name|$locale';
 
@@ -166,9 +174,12 @@ class VoiceCatalog {
     for (final v in voicesFor(lang)) {
       n++;
       final lower = v.name.toLowerCase();
+      final prefix = v.locale.split(RegExp('[-_]')).first.toLowerCase();
       final technical = lower.contains('-x-') ||
           lower.startsWith('$lang-') ||
           lower.startsWith('${lang}_') ||
+          lower.startsWith('$prefix-') ||
+          lower.startsWith('${prefix}_') ||
           lower.contains('#');
       final parts = <String>[
         technical ? 'Voix $n' : v.name,

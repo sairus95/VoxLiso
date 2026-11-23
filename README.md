@@ -4,7 +4,7 @@ Application **Android et iPhone** qui lit à voix haute les sous-titres affiché
 
 On pointe la caméra du téléphone vers l'écran, on place la bande jaune sur les sous-titres, on appuie sur **« Lire les sous-titres »**, et le téléphone les dit à voix haute au fur et à mesure.
 
-Langues : **français, allemand, espagnol, italien, anglais, portugais**.
+Langues : **français, allemand, espagnol, italien, anglais, portugais**, et aussi **néerlandais, polonais, roumain, suédois, danois, norvégien, finnois, tchèque, slovaque, hongrois, turc, catalan, croate, chinois, japonais, coréen**.
 
 ---
 
@@ -30,7 +30,8 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 ### Réglages disponibles
 | Réglage | Effet |
 |---|---|
-| Langue (Auto / FR / DE / ES / IT / EN / PT) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. Les sous-titres dans une **autre langue** (néerlandais, polonais, roumain…) sont **traduits automatiquement** (en français par défaut ; langue téléchargée en Wi-Fi au premier besoin, ou DeepL). Sinon, la langue choisie est imposée. |
+| Langue (Auto / FR / DE…) | **Auto** (par défaut) reconnaît la langue de chaque sous-titre et prend la bonne voix. La barre montre les langues cochées dans **Réglages > Langues des sous-titres** (par défaut FR, DE, ES, IT, EN, PT ; 22 langues au choix). Les sous-titres dans une **langue non cochée** (ou en slovène, vietnamien…) sont **traduits automatiquement** (en français par défaut ; langue téléchargée en Wi-Fi au premier besoin, ou en ligne). Sinon, la langue choisie est imposée. |
+| Chinois, japonais, coréen | Moteurs de reconnaissance ML Kit dédiés (ils lisent aussi l'alphabet latin), choisis tout seuls en touchant ZH, JA ou KO, ou dans **Écriture des sous-titres**. Texte sans espaces : comparaison et vote caractère par caractère, lignes réunies sans espace, ponctuation 。，、 reconnue, temps de parole compté triple pour la vitesse automatique. Caméra et écran du téléphone. |
 | Zone des sous-titres | Bande jaune à déplacer / agrandir avec le doigt. Seul le texte dedans est lu (le logo de la chaîne, l'heure… sont ignorés). |
 | Sous-titres en haut | Quand rien n'est lu dans la zone, VoxLiso lit aussi la même bande de l'autre côté de l'image (cadre en pointillés) : sous-titres placés en haut quand le bas est pris par un texte, un nom ou un générique. Texte fixe ignoré là aussi. Mode écran : en plein écran seulement. Réglage « Sous-titres en haut de l'image » (activé). |
 | Repérer les sous-titres | Bouton qui observe l'écran quelques secondes (jusqu'à 12 s ; 30 s en mode écran du téléphone) et place la zone autour du texte qui change, en écartant le texte fixe. |
@@ -138,7 +139,7 @@ Dans la Play Console, laissez Google gérer la clé de signature de l'applicatio
 | `lib/subtitle_tracker.dart` | Décide quand lire un sous-titre (stabilité, doublons, défilement) |
 | `lib/speech_service.dart` | Synthèse vocale et file d'attente |
 | `lib/rate_pacer.dart` | Vitesse automatique : accélération selon le retard de la voix |
-| `lib/languages.dart` | Les 6 langues lues (FR, DE, ES, IT, EN, PT), leurs voix, et les autres langues traduites |
+| `lib/languages.dart` | Les 22 langues lues (voix, écriture), les autres langues traduites, et les outils d'écriture (`isCjkRune`, `speechWeight`) |
 | `lib/language_detector.dart` | Détection automatique de la langue (ML Kit Language ID) |
 | `lib/voices.dart` | Liste et classement des voix du téléphone, choix du 2e personnage |
 | `lib/translator.dart` | Traduction hors ligne (ML Kit Translation) et téléchargement des langues |
@@ -154,6 +155,6 @@ Dans la Play Console, laissez Google gérer la clé de signature de l'applicatio
 | `tool/icone/`, `assets/launcher/` | Logo « Bulle-onde » (jaune #FFC93C, bleu nuit #12204A) et images générées pour Android et iOS |
 | `test/subtitle_logic_test.dart` | Tests de la logique des sous-titres |
 
-Ajouter une langue à alphabet latin (néerlandais, polonais…) : une ligne dans `lib/languages.dart` (et la retirer de `kOtherLanguages`).
+Ajouter une langue à alphabet latin : une ligne dans `lib/languages.dart` (et la retirer de `kOtherLanguages`), plus son dictionnaire `assets/dict/<code>.txt.gz` (FrequencyWords 2018, voir `assets/dict/LICENCE.md`) et son code dans `SpellFixer.languages`.
 
 Bibliothèques : `camera`, `camera_android`, `google_mlkit_text_recognition`, `google_mlkit_language_id`, `google_mlkit_translation`, `flutter_tts`, `wakelock_plus`, `shared_preferences`.

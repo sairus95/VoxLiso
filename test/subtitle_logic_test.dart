@@ -108,7 +108,17 @@ void main() {
 
     test('ignore les langues non prises en charge', () {
       final d = LanguageDecision('it');
-      expect(d.update('Dit is een Nederlandse zin hier.', {'nl': 0.98}), 'it');
+      expect(d.update('Đây là một câu tiếng Việt khá dài.', {'vi': 0.98}), 'it');
+    });
+
+    test('lit le néerlandais directement', () {
+      final d = LanguageDecision('fr');
+      expect(d.update('Dit is een Nederlandse zin hier.', {'nl': 0.98}), 'nl');
+    });
+
+    test('reconnaît un court sous-titre chinois', () {
+      final d = LanguageDecision('fr');
+      expect(d.update('你在做什么？', {'zh': 0.95}), 'zh');
     });
 
     test('lit l\'anglais directement', () {
@@ -121,9 +131,9 @@ void main() {
       expect(d.update('Esta é uma frase em português.', {'pt': 0.98}), 'pt');
     });
 
-    test('reconnaît une autre langue à traduire (néerlandais)', () {
+    test('reconnaît une autre langue à traduire (vietnamien)', () {
       final d = LanguageDecision('fr', accept: (c) => kOtherLanguages.containsKey(c));
-      expect(d.update('Dit is een Nederlandse zin hier.', {'nl': 0.98}), 'nl');
+      expect(d.update('Đây là một câu tiếng Việt khá dài.', {'vi': 0.98}), 'vi');
       expect(d.update('Où est la gare, s\'il vous plaît ?', {'fr': 0.97}), 'fr');
     });
 
@@ -539,6 +549,58 @@ void main() {
     });
     test('pas de miroir pour une zone qui prend presque toute la hauteur', () {
       expect(mirrorBand(0.05, 0.95), isNull);
+    });
+  });
+
+  group('Nouvelles langues', () {
+    test('codes et écritures', () {
+      expect(supportedLanguage('nb-NO')?.code, 'no');
+      expect(supportedLanguage('pl')?.label, 'Polski');
+      expect(languageFor('ja').script, SubtitleScript.japanese);
+      expect(languageFor('ko').script, SubtitleScript.korean);
+      expect(languageFor('nl').script, SubtitleScript.latin);
+      expect(SubtitleScript.fromName('chinese'), SubtitleScript.chinese);
+      expect(SubtitleScript.fromName('???'), SubtitleScript.latin);
+      expect(kOtherLanguages.containsKey('nl'), isFalse);
+      expect(isReadLanguage('zh'), isTrue);
+    });
+    test('traduction : codes DeepL et Azure', () {
+      expect(SubtitleTranslator.deeplTarget('zh'), 'ZH-HANS');
+      expect(SubtitleTranslator.deeplTarget('no'), 'NB');
+      expect(SubtitleTranslator.deeplTarget('nl'), 'NL');
+      expect(SubtitleTranslator.azureLang('zh'), 'zh-Hans');
+    });
+    test('comparaison : toutes les écritures', () {
+      expect(normalizeForCompare('你好，世界！'), '你好 世界');
+      expect(normalizeForCompare('Łódź'), 'lodz');
+      expect(normalizeForCompare('Přečtu titulky'), 'prectu titulky');
+      expect(similarity(normalizeForCompare('안녕하세요'), normalizeForCompare('안녕하세요!')), 1.0);
+    });
+    test('temps de parole', () {
+      expect(speechWeight('ab'), 2);
+      expect(speechWeight('你好'), 6);
+      expect(speechWeight('안녕'), 6);
+    });
+    test('répliques en chinois', () {
+      expect(subtitleParts(['－你好', '－再见']), ['你好。', '再见']);
+      expect(cleanSubtitle(['我觉得', '你说得对。']), '我觉得你说得对。');
+    });
+    test('vote caractère par caractère', () {
+      expect(ReadingVote.tokens('我觉得 OK 吗'), ['我', '觉', '得', 'OK', '吗']);
+      expect(
+        ReadingVote.combine(const [
+          OcrReading('我觉得你说得对'),
+          OcrReading('我觉得你说得封'),
+          OcrReading('我觉得你说得对'),
+        ]),
+        '我觉得你说得对',
+      );
+      expect(ReadingVote.joinTokens(['Hello', 'world']), 'Hello world');
+    });
+    test('phrases coupées en chinois', () {
+      expect(SentenceJoiner.isIncomplete('我觉得，', 'zh'), isTrue);
+      expect(SentenceJoiner.isIncomplete('我觉得你说得对。', 'zh'), isFalse);
+      expect(SentenceJoiner.join('我觉得…', '…你说得对。'), '我觉得你说得对。');
     });
   });
 }
