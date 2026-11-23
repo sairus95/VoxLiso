@@ -196,6 +196,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
   String _plusFeatures({bool capital = false}) {
     final list = [
       'traduction',
+      'choix des voix',
       'écran noir pendant la lecture',
       if (Platform.isAndroid) 'lecture de l\'écran du téléphone',
     ];
@@ -251,10 +252,23 @@ class _SettingsSheetState extends State<SettingsSheet> {
         v != null && voices.any((x) => x.key == v.key) ? v.key : 'auto';
 
     final pitch2 = s.pitch2For(_voiceLang);
+    // Version boutique sans VoxLiso Plus : la voix automatique du téléphone, et une
+    // ligne cadenas à la place des choix (voix, moteur, hauteur, voix par personnage).
+    final voicesLocked = !Premium.instance.has(PlusFeature.voices);
     return [
       Text('Voix', style: theme.textTheme.titleMedium),
       const SizedBox(height: 8),
-      if (Platform.isAndroid && _engines.length > 1) ...[
+      if (voicesLocked)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Choix des voix'),
+          subtitle: const Text('Avec VoxLiso Plus : choisir la voix de chaque langue, le '
+              'moteur de voix et la hauteur, et une autre voix pour chaque personnage. '
+              'Sans Plus, VoxLiso prend la voix la plus naturelle du téléphone.'),
+          trailing: Icon(Icons.lock_outline, color: theme.colorScheme.primary),
+          onTap: () => openPlusScreen(context, reason: PlusFeature.voices),
+        ),
+      if (!voicesLocked && Platform.isAndroid && _engines.length > 1) ...[
         DropdownButtonFormField<String>(
           initialValue: _engines.any((e) => e.name == s.ttsEngine) ? s.ttsEngine : '',
           isExpanded: true,
@@ -285,21 +299,22 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ),
         const SizedBox(height: 12),
       ],
-      Wrap(spacing: 8, children: [
-        for (final l in kLanguages)
-          ChoiceChip(
-            label: Text(l.label),
-            selected: _voiceLang == l.code,
-            onSelected: (_) => setState(() => _voiceLang = l.code),
-          ),
-      ]),
+      if (!voicesLocked)
+        Wrap(spacing: 8, children: [
+          for (final l in kLanguages)
+            ChoiceChip(
+              label: Text(l.label),
+              selected: _voiceLang == l.code,
+              onSelected: (_) => setState(() => _voiceLang = l.code),
+            ),
+        ]),
       const SizedBox(height: 12),
       if (voices.isEmpty)
         Text(
           'Aucune voix ${lang.label} trouvée sur ce téléphone. ${_installHint()}',
           style: TextStyle(color: theme.colorScheme.error),
         )
-      else ...[
+      else if (!voicesLocked) ...[
         Text(
           '${voices.length} voix ${lang.label} sur ce téléphone'
           '${voices.where((v) => v.networkRequired).isNotEmpty ? ' (dont ${voices.where((v) => v.networkRequired).length} en ligne, très naturelles)' : ''}.',
@@ -404,15 +419,16 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ),
       ],
       const SizedBox(height: 12),
-      SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Une voix par personnage'),
-        subtitle: const Text(
-            'Dans les dialogues à tirets (« - Oui. » / « - Non. »), la 2e réplique est '
-            "lue avec une autre voix, ou plus grave si le téléphone n'a qu'une voix."),
-        value: s.dialogueVoices,
-        onChanged: (v) => setState(() => s.dialogueVoices = v),
-      ),
+      if (!voicesLocked)
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Une voix par personnage'),
+          subtitle: const Text(
+              'Dans les dialogues à tirets (« - Oui. » / « - Non. »), la 2e réplique est '
+              "lue avec une autre voix, ou plus grave si le téléphone n'a qu'une voix."),
+          value: s.dialogueVoices,
+          onChanged: (v) => setState(() => s.dialogueVoices = v),
+        ),
       const SizedBox(height: 8),
       Text('Vitesse de la voix : x${s.rate.toStringAsFixed(2)}',
           style: theme.textTheme.titleSmall),

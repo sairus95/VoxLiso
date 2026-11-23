@@ -64,6 +64,7 @@ class PlusScreen extends StatelessWidget {
                           PlusFeature.translation => Icons.translate,
                           PlusFeature.screen => Icons.smartphone,
                           PlusFeature.blackScreen => Icons.dark_mode,
+                          PlusFeature.voices => Icons.record_voice_over,
                         },
                         color: kBrandYellow,
                         size: 32,

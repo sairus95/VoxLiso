@@ -17,7 +17,10 @@ enum PlusFeature {
       'Lire les sous-titres des vidéos regardées sur ce téléphone (YouTube, navigateur…).'),
   blackScreen('Écran noir pendant la lecture',
       'Après 8 secondes sans toucher le téléphone, l\'écran passe au noir : il ne gêne pas '
-          'dans le noir et la batterie dure plus longtemps. Un toucher le rallume.');
+          'dans le noir et la batterie dure plus longtemps. Un toucher le rallume.'),
+  voices('Choix des voix',
+      'Choisir la voix de chaque langue, le moteur de voix et la hauteur, et donner une '
+          'autre voix à chaque personnage dans les dialogues.');
 
   const PlusFeature(this.title, this.description);
   final String title;

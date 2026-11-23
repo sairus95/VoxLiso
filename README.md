@@ -90,7 +90,7 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 
 ## VoxLiso Plus et publication dans les boutiques
 
-**VoxLiso Plus** est un achat unique (sans abonnement) qui débloque la **traduction**, l'**écran noir pendant la lecture** et la **lecture de l'écran du téléphone**. La lecture des sous-titres avec la caméra reste gratuite.
+**VoxLiso Plus** est un achat unique (sans abonnement) qui débloque la **traduction**, le **choix des voix** (voix de chaque langue, moteur, hauteur, une voix par personnage), l'**écran noir pendant la lecture** et la **lecture de l'écran du téléphone**. La lecture des sous-titres avec la caméra reste gratuite, avec la voix la plus naturelle du téléphone et la vitesse réglable.
 
 - Seule la **version des boutiques** (compilée avec `--dart-define=STORE_BUILD=true`) demande l'achat. L'APK publié sur GitHub et les compilations sur l'ordinateur ont toutes les fonctions débloquées.
 - Produit à créer, avec l'identifiant **`voxliso_plus`** (produit **non consommable**) :

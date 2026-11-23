@@ -137,8 +137,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   void _onPremium() {
     if (!mounted || _closed) return;
+    // Plus acheté : le moteur de voix choisi s'applique tout de suite.
+    if (_voicesUnlocked && s.ttsEngine.isNotEmpty) _speech.setEngine(s.ttsEngine);
     setState(() {});
   }
+
+  /// Choix des voix (voix, moteur, hauteur, voix par personnage) : VoxLiso Plus.
+  bool get _voicesUnlocked => Premium.instance.has(PlusFeature.voices);
 
   @override
   void initState() {
@@ -187,7 +192,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   Future<void> _start() async {
     await _speech.init();
-    if (s.ttsEngine.isNotEmpty) await _speech.setEngine(s.ttsEngine);
+    if (_voicesUnlocked && s.ttsEngine.isNotEmpty) await _speech.setEngine(s.ttsEngine);
     _catalog.load(await _speech.rawVoices());
     _translator.refresh();
     _autoCheckUpdate();
@@ -675,7 +680,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Répliques séparées seulement si tout le sous-titre est nouveau
     // (pas pour la fin d'un sous-titre « en direct » qui défile).
     final full = _tracker.lastWasFull;
-    final segments = s.dialogueVoices && parts.length > 1 && full ? parts : [text];
+    final segments =
+        s.dialogueVoices && _voicesUnlocked && parts.length > 1 && full ? parts : [text];
     // Un sous-titre qui commence par un tiret ouvre une nouvelle réplique :
     // ce n'est jamais la suite de la phrase précédente.
     final dialogueStart = full && startsWithDialogue(toSay);
@@ -912,8 +918,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   // ------------------------------------------------------ voix et langue
 
-  /// Voix principale d'une langue : celle choisie, sinon la plus naturelle.
-  TtsVoice? _primaryVoice(String lang) => s.voiceFor(lang) ?? _catalog.best(lang);
+  /// Voix principale d'une langue : celle choisie, sinon la plus naturelle
+  /// (sans VoxLiso Plus : toujours la plus naturelle).
+  TtsVoice? _primaryVoice(String lang) =>
+      (_voicesUnlocked ? s.voiceFor(lang) : null) ?? _catalog.best(lang);
+
+  /// Hauteur de la voix principale (sans VoxLiso Plus : normale).
+  double _pitchFor(String lang) => _voicesUnlocked ? s.pitchFor(lang) : 1.0;
 
   /// Voix du 2e personnage : celle choisie, sinon une autre voix de la langue,
   /// sinon la même voix en plus grave.
@@ -923,7 +934,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final chosenPitch = s.pitch2For(lang);
     if (second == null || second.key == first?.key) {
       // Même voix que le 1er personnage : plus grave pour les distinguer.
-      return (voice: first, pitch: chosenPitch ?? s.pitchFor(lang) * 0.8);
+      return (voice: first, pitch: chosenPitch ?? _pitchFor(lang) * 0.8);
     }
     return (voice: second, pitch: chosenPitch ?? 1.0);
   }
@@ -1048,7 +1059,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           out[i],
           locale: locale,
           voice: (firstIndex + i).isOdd ? second.voice : first,
-          pitch: (firstIndex + i).isOdd ? second.pitch : s.pitchFor(speakLang),
+          pitch: (firstIndex + i).isOdd ? second.pitch : _pitchFor(speakLang),
         ),
     ]);
     if (s.largeMode) HapticFeedback.lightImpact();
@@ -1389,7 +1400,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       e.text,
       locale: isReadLanguage(e.lang) ? languageFor(e.lang).ttsLocale : e.lang,
       voice: _primaryVoice(e.lang),
-      pitch: s.pitchFor(e.lang),
+      pitch: _pitchFor(e.lang),
     );
   }
 
