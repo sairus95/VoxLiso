@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'bergamot.dart';
 import 'bergamot_models.dart';
 import 'system_bridge.dart';
+import 'text_tools.dart';
 
 abstract class PhoneTranslator {
   /// Le traducteur de ce téléphone, ou null (ordinateur, tests).
@@ -162,9 +163,9 @@ class BergamotTranslator extends PhoneTranslator {
     final worker = await _workerReady();
     if (worker == null) return null;
     try {
-      final out = await worker.translate(texts, route.first, route.length > 1 ? route[1] : null);
-      if (out.length != texts.length || out.every((t) => t.trim().isEmpty)) return null;
-      return out;
+      final raw = await worker.translate(texts, route.first, route.length > 1 ? route[1] : null);
+      if (raw.length != texts.length || raw.every((t) => t.trim().isEmpty)) return null;
+      return [for (var i = 0; i < raw.length; i++) removeRepeatedSentences(texts[i], raw[i])];
     } catch (_) {
       return null;
     }

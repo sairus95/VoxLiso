@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voxliso/bergamot.dart';
 import 'package:voxliso/bergamot_models.dart';
 import 'package:voxliso/phone_translator.dart';
+import 'package:voxliso/text_tools.dart';
 import 'package:voxliso/translator.dart';
 
 Map<String, dynamic> _entry(String from, String to, String status,
@@ -105,6 +106,20 @@ void main() {
     });
   });
 
+  group('Phrase répétée par le traducteur', () {
+    test('« I don\'t know. I don\'t know. » → une fois', () {
+      expect(removeRepeatedSentences('Je ne sais pas.', "I don't know. I don't know."),
+          "I don't know.");
+      expect(removeRepeatedSentences('Non.', 'No. No.'), 'No.');
+      expect(removeRepeatedSentences('Non.', 'No! No.'), 'No!');
+    });
+    test('répétition voulue ou phrases différentes : inchangé', () {
+      expect(removeRepeatedSentences('Non. Non.', 'No. No.'), 'No. No.');
+      expect(removeRepeatedSentences('Merci. Au revoir.', 'Thanks. Goodbye.'), 'Thanks. Goodbye.');
+      expect(removeRepeatedSentences('Merci.', 'Thank you.'), 'Thank you.');
+    });
+  });
+
   group('Modèles installés', () {
     late Directory root;
     late BergamotStore store;
@@ -187,7 +202,7 @@ void main() {
       print('fr→en en ${sw.elapsedMilliseconds} ms : $out');
       expect(out, isNotNull);
       expect(out![0].toLowerCase(), contains('station'));
-      expect(out[1].toLowerCase(), contains('know'));
+      expect(out[1], "I don't know."); // sans la répétition du moteur
     });
 
     test('français → allemand, par l\'anglais', () async {
