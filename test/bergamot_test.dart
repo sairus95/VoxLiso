@@ -191,11 +191,29 @@ void main() {
     });
 
     test('français → allemand, par l\'anglais', () async {
-      final out = await phone.translate(['Où est la gare, s\'il vous plaît ?'], 'fr', 'de');
+      final out = await phone.translate(['Le chat dort sur le canapé.'], 'fr', 'de');
       // ignore: avoid_print
       print('fr→de : $out');
       expect(out, isNotNull);
-      expect(out!.first, contains('Bahnhof'));
+      expect(out!.first, contains('Katze'));
+    });
+
+    test('répliques courtes (affichage seulement)', () async {
+      const lines = [
+        'Je ne sais pas.',
+        'Merci.',
+        'Non.',
+        'Tu viens ?',
+        'Je ne sais pas',
+        'Il pleut depuis ce matin et je suis fatigué.',
+      ];
+      final batch = await phone.translate(lines, 'fr', 'en');
+      // ignore: avoid_print
+      print('lot : $batch');
+      for (final l in lines) {
+        // ignore: avoid_print
+        print('seul : $l → ${await phone.translate([l], 'fr', 'en')}');
+      }
     });
 
     test('langue absente : null (pas d\'erreur)', () async {
