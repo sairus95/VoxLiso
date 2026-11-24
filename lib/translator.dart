@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 
+import 'phone_translator.dart';
 import 'text_tools.dart';
 
 /// Résultat d'une traduction : textes traduits et moteur utilisé.
@@ -11,17 +12,31 @@ class TranslationResult {
   TranslationResult(this.texts, this.engine);
   final List<String> texts;
 
-  /// « Azure », « DeepL » ou « hors ligne ».
+  /// « téléphone » (Firefox / Apple), « Azure », « DeepL » ou « hors ligne » (ML Kit).
   final String engine;
 }
 
 /// Traduction des sous-titres, dans cet ordre :
-///  - Microsoft Azure Translator, avec une clé (facultative) : en ligne,
-///    2 millions de caractères gratuits renouvelés chaque mois ;
-///  - DeepL, avec une clé (facultative) : en ligne, très bonne qualité ;
-///  - sinon, sans internet ou si les quotas sont épuisés : sur le téléphone
-///    (ML Kit), une fois les langues téléchargées (environ 30 Mo par langue).
+///  - le traducteur du téléphone (Firefox sur Android, Apple sur iPhone) :
+///    gratuit, sans limite et sans internet, une fois les langues téléchargées ;
+///  - en attendant (langue pas encore téléchargée) ou s'il n'existe pas sur ce
+///    téléphone : Microsoft Azure Translator, puis DeepL, avec une clé ;
+///  - enfin ML Kit (hors ligne, moins bon), si ses langues sont là.
 class SubtitleTranslator {
+  SubtitleTranslator({PhoneTranslator? phone, bool usePhone = true})
+      : phone = usePhone ? (phone ?? PhoneTranslator.create()) : null {
+    this.phone?.onChange = () => onChange?.call();
+  }
+
+  /// Traducteur du téléphone (null : ordinateur, tests).
+  final PhoneTranslator? phone;
+
+  /// Le traducteur du téléphone fonctionne ici (vérifié par [refresh]).
+  bool phoneReady = false;
+
+  /// Appelé quand un téléchargement de langue avance (pour les réglages).
+  void Function()? onChange;
+
   /// Clé et région de Microsoft Azure Translator (clé vide = pas d'Azure ;
   /// région vide ou « global » pour une ressource globale).
   String azureKey = '';
@@ -53,12 +68,28 @@ class SubtitleTranslator {
   /// Langues en cours de téléchargement automatique (Wi-Fi), pour l'afficher.
   final Set<String> autoDownloading = {};
 
-  bool isDownloading(String code) => _downloading.contains(code);
+  bool isDownloading(String code) =>
+      phoneReady ? phone!.isDownloading(code) : _downloading.contains(code);
+
+  /// Avancement d'un téléchargement (0 à 1), si connu.
+  double? downloadProgress(String code) => phoneReady ? phone!.progress(code) : null;
 
   /// État connu (sans interroger le téléphone) : null = pas encore vérifié.
-  bool? knownDownloaded(String code) => _downloaded[code];
+  bool? knownDownloaded(String code) =>
+      phoneReady ? phone!.knownInstalled(code) : _downloaded[code];
+
+  /// Une langue téléchargée peut-elle être supprimée depuis VoxLiso ?
+  bool get canDelete => phoneReady && phone!.canDelete;
+
+  /// Nom du traducteur du téléphone (« Firefox », « Apple »), ou null (ML Kit).
+  String? get phoneLabel => phoneReady ? phone!.label : null;
 
   Future<bool> isDownloaded(String code) async {
+    if (phoneReady) return phone!.isInstalled(code);
+    return _mlkitDownloaded(code);
+  }
+
+  Future<bool> _mlkitDownloaded(String code) async {
     if (!canTranslate(code)) return false;
     try {
       final ok = await _models.isModelDownloaded(_bcp(code));
@@ -70,13 +101,26 @@ class SubtitleTranslator {
   }
 
   Future<void> refresh() async {
+    phoneReady = phone != null && await phone!.isAvailable();
     for (final code in _main) {
       await isDownloaded(code);
     }
   }
 
-  /// Télécharge une langue (une seule fois). [wifiOnly] : attendre le Wi-Fi.
+  /// Vérifie l'état de quelques langues (celles affichées dans les réglages).
+  Future<void> refreshLanguages(Iterable<String> codes) async {
+    for (final code in codes) {
+      await isDownloaded(code);
+    }
+  }
+
+  /// Télécharge une langue (une seule fois). [wifiOnly] : attendre le Wi-Fi (ML Kit).
   Future<bool> download(String code, {bool wifiOnly = false}) async {
+    if (phoneReady) return phone!.download(code);
+    return _mlkitDownload(code, wifiOnly: wifiOnly);
+  }
+
+  Future<bool> _mlkitDownload(String code, {bool wifiOnly = false}) async {
     if (!canTranslate(code) || _downloading.contains(code)) return false;
     _downloading.add(code);
     try {
@@ -91,6 +135,7 @@ class SubtitleTranslator {
   }
 
   Future<bool> delete(String code) async {
+    if (phoneReady) return phone!.delete(code);
     try {
       final ok = await _models.deleteModel(_bcp(code));
       _downloaded[code] = false;
@@ -102,16 +147,17 @@ class SubtitleTranslator {
 
   /// Traduit [text] de [from] vers [to]. Renvoie null si une des deux langues
   /// n'est pas téléchargée ou si la traduction échoue.
-  Future<String?> translate(String text, String from, String to) async {
+  Future<String?> translate(String text, String from, String to, {bool autoDownload = true}) async {
     if (from == to) return text;
     if (!canTranslate(from) || !canTranslate(to)) return null;
-    final fromOk = _downloaded[from] ?? await isDownloaded(from);
-    final toOk = _downloaded[to] ?? await isDownloaded(to);
+    final fromOk = _downloaded[from] ?? await _mlkitDownloaded(from);
+    final toOk = _downloaded[to] ?? await _mlkitDownloaded(to);
     if (!fromOk || !toOk) {
+      if (!autoDownload) return null;
       // Langue manquante : téléchargement automatique en Wi-Fi, pour la suite.
       for (final c in [if (!fromOk) from, if (!toOk) to]) {
         if (autoDownloading.add(c)) {
-          download(c, wifiOnly: true).whenComplete(() => autoDownloading.remove(c));
+          _mlkitDownload(c, wifiOnly: true).whenComplete(() => autoDownloading.remove(c));
         }
       }
       return null;
@@ -129,11 +175,27 @@ class SubtitleTranslator {
   }
 
   /// Traduit plusieurs phrases (ex. les répliques d'un dialogue) d'un coup :
-  /// DeepL si une clé est réglée et que le réseau répond, sinon hors ligne.
+  /// traducteur du téléphone, sinon Azure / DeepL (avec une clé), sinon ML Kit.
   /// Renvoie null si aucune traduction n'est possible.
   Future<TranslationResult?> translateAll(List<String> texts, String from, String to) async {
     if (from == to) return TranslationResult(texts, '');
     final prepared = [for (final t in texts) prepareForTranslation(t)];
+    final p = phoneReady ? phone : null;
+    if (p != null && await p.canTranslateNow(from, to)) {
+      final out = await p
+          .translate(prepared, from, to)
+          .timeout(const Duration(seconds: 8), onTimeout: () => null);
+      if (out != null) {
+        autoDownloading.clear();
+        return TranslationResult(out, 'téléphone');
+      }
+    }
+    // Langue pas encore sur le téléphone : téléchargement en Wi-Fi, pour la suite.
+    if (p != null) {
+      autoDownloading
+        ..clear()
+        ..addAll(p.autoDownload(from, to));
+    }
     if (azureKey.trim().isNotEmpty) {
       final online = await _azure(prepared, from, to);
       if (online != null) return TranslationResult(online, 'Azure');
@@ -144,8 +206,10 @@ class SubtitleTranslator {
     }
     final out = <String>[];
     for (final t in prepared) {
-      final r = await translate(t, from, to).timeout(const Duration(seconds: 6),
-          onTimeout: () => null);
+      // Avec le traducteur du téléphone, ML Kit ne télécharge rien tant que le
+      // téléphone prépare ces langues (pas de double téléchargement).
+      final r = await translate(t, from, to, autoDownload: p == null || autoDownloading.isEmpty)
+          .timeout(const Duration(seconds: 6), onTimeout: () => null);
       if (r == null) return null;
       out.add(r);
     }
@@ -289,6 +353,7 @@ class SubtitleTranslator {
 
   Future<void> close() async {
     _http.close(force: true);
+    await phone?.close();
     for (final t in _translators.values) {
       await t.close();
     }

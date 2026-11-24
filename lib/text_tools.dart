@@ -137,6 +137,34 @@ String prepareForTranslation(String text) {
   return t.isEmpty ? text.trim() : t;
 }
 
+/// Fin de phrase suivie d'un espace (point, ?, !, …, et leurs formes CJK).
+final RegExp _sentenceEnd = RegExp(r'(?<=[.!?…。！？])\s+');
+
+/// Corrige une traduction qui répète la même phrase (« Je ne sais pas. » →
+/// « I don't know. I don't know. », défaut du traducteur de Firefox sur les
+/// répliques courtes) : une phrase répétée juste après elle-même est retirée,
+/// sauf si l'original répète déjà sa phrase (« Non. Non. »).
+String removeRepeatedSentences(String source, String translated) {
+  List<String> split(String t) =>
+      [for (final p in t.trim().split(_sentenceEnd)) if (p.trim().isNotEmpty) p.trim()];
+  bool repeats(List<String> parts) {
+    for (var i = 1; i < parts.length; i++) {
+      final a = normalizeForCompare(parts[i - 1]);
+      if (a.isNotEmpty && a == normalizeForCompare(parts[i])) return true;
+    }
+    return false;
+  }
+
+  final out = split(translated);
+  if (out.length < 2 || !repeats(out) || repeats(split(source))) return translated;
+  final kept = <String>[];
+  for (final p in out) {
+    if (kept.isNotEmpty && normalizeForCompare(kept.last) == normalizeForCompare(p)) continue;
+    kept.add(p);
+  }
+  return kept.join(' ');
+}
+
 /// Version « simplifiée » d'un texte pour comparer deux lectures de l'OCR :
 /// minuscules, sans accents ni ponctuation.
 String normalizeForCompare(String text) {

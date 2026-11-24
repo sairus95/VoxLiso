@@ -12,3 +12,10 @@ ios/Flutter/Generated.xcconfig
 ios/Flutter/flutter_export_environment.sh
 android/.gradle/
 android/local.properties
+
+# Moteur Bergamot (compilé par la CI)
+native/bergamot/engine/
+native/bergamot/build-*/
+native/bergamot/out/
+native/bergamot/models/
+!native/bergamot/build/

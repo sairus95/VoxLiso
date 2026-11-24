@@ -85,6 +85,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
 
   @override
   void dispose() {
+    widget.translator.onChange = null;
     _deepl.dispose();
     _azureKey.dispose();
     _azureRegion.dispose();
@@ -143,7 +144,13 @@ class _SettingsSheetState extends State<SettingsSheet> {
     SystemBridge.ttsEngines().then((e) {
       if (mounted) setState(() => _engines = e);
     });
-    widget.translator.refresh().then((_) {
+    widget.translator.onChange = () {
+      if (mounted) setState(() {});
+    };
+    widget.translator
+        .refresh()
+        .then((_) => widget.translator.refreshLanguages([for (final l in _heardLanguages) l.code]))
+        .then((_) {
       if (mounted) setState(() {});
     });
   }
@@ -559,18 +566,14 @@ class _SettingsSheetState extends State<SettingsSheet> {
       Text(
         'En mode Auto, un sous-titre dans une langue non cochée dans « Langues des '
         'sous-titres » (ou en slovène, vietnamien, indonésien…) est traduit automatiquement. '
-        'La langue nécessaire se télécharge '
-        'toute seule en Wi-Fi au premier besoin (environ 30 Mo). Avec une clé DeepL, la '
-        'traduction est immédiate et de meilleure qualité.',
+        '${_phoneHint(t)}',
         style: theme.textTheme.bodySmall,
       ),
       if (target.isNotEmpty) ...[
         const SizedBox(height: 8),
         Text(
           'Les sous-titres dans une autre langue sont traduits en ${languageFor(target).label} '
-          'sur le téléphone. Chaque langue se télécharge une seule fois (environ 30 Mo, '
-          'Wi-Fi conseillé) : il faut la langue des sous-titres ET la langue de traduction. '
-          'Ensuite, tout fonctionne sans internet.',
+          'sur le téléphone. ${_phoneHint(t)}',
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -580,10 +583,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
         Text(
           "Avec une clé Microsoft Azure Translator (palier gratuit « F0 » : 2 millions de "
           "caractères par mois, une trentaine de films, renouvelés chaque mois), la "
-          "traduction se fait en ligne, nettement mieux que hors ligne. À créer sur "
+          "traduction se fait en ligne. À créer sur "
           "portal.azure.com : ressource « Translator », palier F0, région « Global ». "
-          "Azure passe en premier ; si son quota du mois est atteint, DeepL puis la "
-          "traduction hors ligne prennent le relais. Les sous-titres sont alors envoyés à Microsoft.",
+          "Le traducteur du téléphone passe en premier ; Azure sert tant qu'une langue "
+          "n'est pas encore téléchargée (ou si le téléphone n'a pas de traducteur), puis "
+          "DeepL. Les sous-titres sont alors envoyés à Microsoft.",
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
@@ -655,12 +659,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
         Text('Meilleure qualité avec DeepL (facultatif)', style: theme.textTheme.titleSmall),
         const SizedBox(height: 4),
         Text(
-          "La traduction hors ligne est parfois approximative. Avec une clé DeepL "
-          "(formule gratuite « API Developer » sur deepl.com/pro-api : 1 million de "
-          "caractères au total, une quinzaine de films), la traduction se fait en ligne, "
-          "avec une bien meilleure qualité. Les sous-titres sont alors envoyés à DeepL. "
-          "Une fois le quota épuisé, ou sans internet, VoxLiso revient tout seul à la "
-          "traduction hors ligne.",
+          "Avec une clé DeepL (formule gratuite « API Developer » sur deepl.com/pro-api : "
+          "1 million de caractères au total, une quinzaine de films), la traduction se "
+          "fait en ligne tant qu'une langue n'est pas encore sur le téléphone. Les "
+          "sous-titres sont alors envoyés à DeepL. Une fois le quota épuisé, ou sans "
+          "internet, VoxLiso revient tout seul à la traduction du téléphone.",
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
@@ -715,7 +718,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
             child: Text(_testResult!, style: theme.textTheme.bodySmall),
           ),
         const SizedBox(height: 12),
-        Text('Traduction hors ligne : langues téléchargées', style: theme.textTheme.titleSmall),
+        Text(
+            t.phoneLabel != null
+                ? 'Traducteur du téléphone : langues téléchargées'
+                : 'Traduction hors ligne : langues téléchargées',
+            style: theme.textTheme.titleSmall),
         for (final l in kLanguages)
           if (_heardLanguages.contains(l) ||
               t.isDownloading(l.code) ||
@@ -725,24 +732,61 @@ class _SettingsSheetState extends State<SettingsSheet> {
             dense: true,
             title: Text(l.label),
             subtitle: Text(
-              t.isDownloading(l.code)
-                  ? 'Téléchargement en cours…'
-                  : (t.knownDownloaded(l.code) ?? false)
-                      ? 'Téléchargée'
-                      : 'Non téléchargée',
+              l.code == 'en' && t.phoneLabel == 'Firefox'
+                  ? 'Toujours disponible (langue de passage)'
+                  : t.isDownloading(l.code)
+                      ? 'Téléchargement en cours…'
+                          '${t.downloadProgress(l.code) != null ? ' ${(t.downloadProgress(l.code)! * 100).round()} %' : ''}'
+                      : (t.knownDownloaded(l.code) ?? false)
+                          ? 'Téléchargée'
+                          : 'Non téléchargée',
             ),
             trailing: t.isDownloading(l.code)
-                ? const SizedBox(
-                    width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, value: t.downloadProgress(l.code)))
                 : (t.knownDownloaded(l.code) ?? false)
-                    ? const Icon(Icons.check_circle, color: Colors.green)
+                    ? Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.check_circle, color: Colors.green),
+                        if (t.canDelete && l.code != 'en')
+                          IconButton(
+                            tooltip: 'Supprimer ${l.label}',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => _delete(l.code),
+                          ),
+                      ])
                     : TextButton(
                         onPressed: () => _download(l.code),
                         child: const Text('Télécharger'),
                       ),
           ),
+        if (Platform.isIOS && t.phoneLabel != null)
+          Text(
+            'Pour supprimer une langue : Réglages de l\'iPhone > Apps > Traduire > Langues téléchargées.',
+            style: theme.textTheme.bodySmall,
+          ),
       ],
     ];
+  }
+
+  /// Explication du téléchargement des langues, selon le traducteur.
+  String _phoneHint(SubtitleTranslator t) => switch (t.phoneLabel) {
+        'Firefox' => 'Traduction sur le téléphone avec le traducteur de Firefox : gratuite, '
+            'sans limite et sans internet. Chaque langue se télécharge une fois (environ '
+            '35 Mo par sens), toute seule en Wi-Fi au premier besoin ou avec le bouton '
+            'ci-dessous. La traduction passe par l\'anglais (allemand → anglais → français).',
+        'Apple' => 'Traduction sur l\'iPhone avec le traducteur d\'Apple : gratuite, sans '
+            'limite et sans internet. Touchez « Télécharger » ci-dessous : iOS demande '
+            'de confirmer le téléchargement de la langue.',
+        _ => 'La langue nécessaire se télécharge toute seule en Wi-Fi au premier besoin '
+            '(environ 30 Mo). Il faut la langue des sous-titres ET la langue de traduction.',
+      };
+
+  Future<void> _delete(String code) async {
+    await widget.translator.delete(code);
+    if (mounted) setState(() {});
   }
 
   Future<void> _download(String code) async {
