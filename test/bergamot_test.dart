@@ -3,6 +3,8 @@
 //
 // La dernière partie traduit pour de vrai (modèles de Mozilla téléchargés)
 // quand BERGAMOT_LIB donne le chemin de libbergamot pour Linux (CI).
+@Timeout(Duration(minutes: 15))
+library;
 
 import 'dart:convert';
 import 'dart:io';
@@ -215,6 +217,5 @@ void main() {
       expect(await phone.isInstalled('fr'), isFalse); // en-fr absent
       expect(await phone.isInstalled('en'), isTrue);
     });
-  }, skip: lib == null ? 'BERGAMOT_LIB absent (bibliothèque Linux compilée par la CI)' : false,
-      timeout: const Timeout(Duration(minutes: 15)));
+  }, skip: lib == null ? 'BERGAMOT_LIB absent (bibliothèque Linux compilée par la CI)' : false);
 }
