@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'logo.dart';
 import 'premium.dart';
 import 'screen_capture.dart';
+import 'version.dart';
 
 /// Ouvre l'écran VoxLiso Plus. [reason] : la fonction que l'utilisateur
 /// voulait utiliser (mise en avant en haut de la liste).
@@ -23,7 +24,10 @@ class PlusScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final features = [
       for (final f in PlusFeature.values)
-        if (f != PlusFeature.screen || ScreenCapture.isAvailable) f,
+        if ((f != PlusFeature.screen || ScreenCapture.isAvailable) &&
+            // Traduction désactivée pour l'instant : pas proposée.
+            (f != PlusFeature.translation || kTranslationEnabled))
+          f,
     ];
     if (reason != null && features.remove(reason)) features.insert(0, reason!);
     final store = Platform.isIOS ? 'l\'App Store' : 'Google Play';

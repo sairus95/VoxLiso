@@ -15,6 +15,7 @@ import 'package:voxliso/subtitle_tracker.dart';
 import 'package:voxliso/updater.dart';
 import 'package:voxliso/text_tools.dart';
 import 'package:voxliso/translator.dart';
+import 'package:voxliso/version.dart';
 import 'package:voxliso/voices.dart';
 import 'package:voxliso/zones.dart';
 
@@ -756,5 +757,8 @@ void main() {
       expect(d.update('Bon appétit à tous', {'fr': 0.8}), 'en');
       expect(d.update('Merci beaucoup, madame', {'fr': 0.8}), 'fr');
     });
+  });
+  test('traduction désactivée par défaut (lecture des sous-titres tels quels)', () {
+    expect(kTranslationEnabled, isFalse);
   });
 }

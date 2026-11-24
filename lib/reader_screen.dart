@@ -197,7 +197,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     await _speech.init();
     if (_voicesUnlocked && s.ttsEngine.isNotEmpty) await _speech.setEngine(s.ttsEngine);
     _catalog.load(await _speech.rawVoices());
-    _translator.refresh();
+    // Traduction désactivée : le traducteur du téléphone n'est pas démarré.
+    if (kTranslationEnabled) _translator.refresh();
     _autoCheckUpdate();
     await _applyVoice();
     await _initCamera();
@@ -1026,6 +1027,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// fr/de/es/it/en/pt (néerlandais, polonais…) est traduite automatiquement.
   /// Sans VoxLiso Plus, pas de traduction : lecture dans la langue d'origine.
   String _targetFor(String lang) {
+    // Traduction désactivée pour l'instant : chaque sous-titre est lu tel quel.
+    if (!kTranslationEnabled) return '';
     if (!Premium.instance.has(PlusFeature.translation)) return '';
     var target = s.translateTo;
     // Langue non cochée dans « Langues des sous-titres » : traduite.
@@ -2171,13 +2174,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (s.autoLang || _translateTo.isNotEmpty || boost > 1.0)
+          if (s.autoLang || (kTranslationEnabled && _translateTo.isNotEmpty) || boost > 1.0)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 [
                   if (s.autoLang) 'Langue détectée : ${languageName(_langDetector.current)}',
-                  if (_translateTo.isNotEmpty)
+                  if (kTranslationEnabled && _translateTo.isNotEmpty)
                     'lu en ${languageFor(_translateTo).label}'
                         '${_lastOriginal.isNotEmpty && _translationEngine.isNotEmpty ? ' ($_translationEngine)' : ''}',
                   if (boost > 1.0) 'voix accélérée ×${boost.toStringAsFixed(2).replaceAll('.', ',')}',

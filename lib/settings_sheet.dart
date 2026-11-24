@@ -184,8 +184,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
             const Divider(height: 32),
             ..._voiceSection(theme),
             const Divider(height: 32),
-            ..._translationSection(theme),
-            const Divider(height: 32),
+            // Traduction désactivée pour l'instant (kTranslationEnabled).
+            if (kTranslationEnabled) ...[
+              ..._translationSection(theme),
+              const Divider(height: 32),
+            ],
             ..._readingSection(theme),
           ],
         ),
@@ -219,8 +222,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
     return [
       for (final l in kLanguages)
         if (read.contains(l.code) ||
-            l.code == s.translateTo ||
-            l.code == s.autoTranslateTo ||
+            (kTranslationEnabled && (l.code == s.translateTo || l.code == s.autoTranslateTo)) ||
             l.code == widget.voice.code)
           l,
     ];
@@ -233,9 +235,12 @@ class _SettingsSheetState extends State<SettingsSheet> {
       Text('Langues des sous-titres', style: theme.textTheme.titleMedium),
       const SizedBox(height: 4),
       Text(
-        'Cochez les langues à entendre telles quelles : elles apparaissent dans la barre de '
-        'langue. En mode Auto, un sous-titre dans une autre langue est traduit '
-        '(voir « Traduction »).',
+        kTranslationEnabled
+            ? 'Cochez les langues à entendre telles quelles : elles apparaissent dans la barre de '
+                'langue. En mode Auto, un sous-titre dans une autre langue est traduit '
+                '(voir « Traduction »).'
+            : 'Cochez les langues qui apparaissent dans la barre de langue. Chaque sous-titre '
+                'est lu tel quel, dans sa langue, avec la voix du téléphone pour cette langue.',
         style: theme.textTheme.bodySmall,
       ),
       const SizedBox(height: 8),
@@ -285,7 +290,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
 
   String _plusFeatures({bool capital = false}) {
     final list = [
-      'traduction',
+      if (kTranslationEnabled) 'traduction',
       'choix des voix',
       'écran noir pendant la lecture',
       if (Platform.isAndroid) 'lecture de l\'écran du téléphone',
