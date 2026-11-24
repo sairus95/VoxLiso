@@ -45,7 +45,8 @@ class RatePacer {
         ? math.min(target, _factor + maxRise)
         : math.max(target, _factor - maxFall);
     // Par pas de 5 % : la vitesse ne change pas à chaque phrase pour rien.
-    _factor = ((f * 20).round() / 20).clamp(1.0, 1.0 + maxBoost + rushBoost).toDouble();
+    // (borné avant d'arrondir : 1,0 + 0,4 + 0,2 vaut 1,5999… en virgule flottante)
+    _factor = ((f.clamp(1.0, 1.0 + maxBoost + rushBoost) * 20).round() / 20).toDouble();
     return _factor;
   }
 
