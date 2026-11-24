@@ -17,3 +17,9 @@ android/local.properties
 key.properties
 *.jks
 *.keystore
+# Moteur Bergamot (compilé par la CI)
+native/bergamot/engine/
+native/bergamot/build-*/
+native/bergamot/out/
+native/bergamot/models/
+!native/bergamot/build/

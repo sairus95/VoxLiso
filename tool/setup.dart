@@ -14,7 +14,9 @@ const androidMinSdk = 24; // minimum exigé par le plugin camera
 void main() {
   var ok = true;
   ok &= _android();
+  _bergamotAndroid();
   ok &= _ios();
+  ok &= _appleTranslation();
   ok &= _icons();
   _removeDefaultWidgetTest();
   stdout.writeln(ok
@@ -229,6 +231,75 @@ bool _screenCapture(File gradle) {
     gradle.writeAsStringSync(g);
   }
   stdout.writeln('✔ Lecture de l\'écran du téléphone : service natif ($pkg)');
+  return true;
+}
+
+/// Traducteur du téléphone sur Android : libbergamot.so (compilée par la
+/// tâche « bergamot » de la CI) dans l'APK, pour les téléphones 64 bits.
+/// Absente : VoxLiso garde la traduction ML Kit.
+void _bergamotAndroid() {
+  final lib = File('native/bergamot/lib/libbergamot-android-arm64.so');
+  if (!lib.existsSync()) {
+    stdout.writeln('⚠️  libbergamot absente : traducteur du téléphone non inclus (ML Kit seulement)');
+    return;
+  }
+  final dest = Directory('android/app/src/main/jniLibs/arm64-v8a')..createSync(recursive: true);
+  lib.copySync('${dest.path}/libbergamot.so');
+  stdout.writeln('✔ Traducteur du téléphone : libbergamot.so (arm64-v8a, ${lib.lengthSync() ~/ 1024} ko)');
+}
+
+/// Traducteur du téléphone sur iPhone (iOS 18+) : code Swift de
+/// native/ios/VoxTranslation.swift ajouté à AppDelegate.swift et enregistré à
+/// côté des modules Flutter ; cadre Translation lié en « weak » (absent avant
+/// iOS 17.4, l'application doit quand même démarrer).
+bool _appleTranslation() {
+  final delegate = File('ios/Runner/AppDelegate.swift');
+  final src = File('native/ios/VoxTranslation.swift');
+  if (!delegate.existsSync() || !src.existsSync()) {
+    stderr.writeln('❌ AppDelegate.swift introuvable : traduction Apple non installée');
+    return false;
+  }
+  var code = delegate.readAsStringSync();
+  if (!code.contains('class VoxTranslationPlugin')) {
+    final reg = RegExp(r'GeneratedPluginRegistrant\.register\(with:\s*([^)]+)\)');
+    final m = reg.firstMatch(code);
+    if (m == null) {
+      stderr.writeln('❌ AppDelegate.swift : GeneratedPluginRegistrant introuvable');
+      return false;
+    }
+    final registry = m.group(1)!.trim();
+    final line = code.substring(code.lastIndexOf('\n', m.start) + 1, m.start);
+    final indent = RegExp(r'^\s*').firstMatch(line)!.group(0)!;
+    code = code.replaceRange(m.end, m.end,
+        '\n${indent}if let r = $registry.registrar(forPlugin: "VoxTranslationPlugin") {'
+        '\n$indent  VoxTranslationPlugin.register(with: r)'
+        '\n$indent}');
+    // Les « import » en tête du fichier, le reste à la fin.
+    const imports = '#if canImport(Translation)\nimport Translation\nimport SwiftUI\n#endif\n';
+    final swift = src.readAsStringSync();
+    if (!swift.contains(imports)) {
+      stderr.writeln('❌ VoxTranslation.swift : bloc « import » attendu introuvable');
+      return false;
+    }
+    code = '$imports$code\n\n${swift.replaceFirst(imports, '')}';
+    delegate.writeAsStringSync(code);
+  }
+  final pbx = File('ios/Runner.xcodeproj/project.pbxproj');
+  if (pbx.existsSync()) {
+    var s = pbx.readAsStringSync();
+    if (!s.contains('-weak_framework')) {
+      // Seulement la cible Runner (pas RunnerTests, dont l'identifiant finit par .RunnerTests).
+      s = s.replaceAllMapped(
+        RegExp(r'^(\s*)PRODUCT_BUNDLE_IDENTIFIER = ([\w.]+);\n', multiLine: true),
+        (m) => m[2]!.endsWith('RunnerTests')
+            ? m[0]!
+            : '${m[0]}${m[1]}OTHER_LDFLAGS = (\n${m[1]}\t"\$(inherited)",\n'
+                '${m[1]}\t"-weak_framework",\n${m[1]}\tTranslation,\n${m[1]});\n',
+      );
+      pbx.writeAsStringSync(s);
+    }
+  }
+  stdout.writeln('✔ Traduction Apple (iOS 18+) : VoxTranslationPlugin enregistré');
   return true;
 }
 

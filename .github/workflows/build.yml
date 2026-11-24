@@ -8,7 +8,39 @@ on:
   workflow_dispatch:
 
 jobs:
+  bergamot:
+    # Traducteur du téléphone (Bergamot, le traducteur de Firefox) : compilé
+    # une fois (≈30 min), puis gardé en cache tant que native/bergamot/ ne
+    # change pas. Android (dans l'APK) et Linux (pour les tests).
+    strategy:
+      matrix:
+        platform: [android, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: native/bergamot/out/${{ matrix.platform }}/release
+          key: bergamot-${{ matrix.platform }}-v1-${{ hashFiles('native/bergamot/**') }}
+      - name: Outils
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Télécharger le moteur (mozilla/translations)
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: native/bergamot/build/fetch-engine.sh native/bergamot/engine
+      - name: Compiler
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: native/bergamot/build/build.sh ${{ matrix.platform }} native/bergamot/engine
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libbergamot-${{ matrix.platform }}
+          path: native/bergamot/out/${{ matrix.platform }}/release/
+          if-no-files-found: error
+
   android:
+    needs: bergamot
     runs-on: ubuntu-latest
     permissions:
       contents: write   # pour publier l'APK dans « Releases »
@@ -39,6 +71,12 @@ jobs:
             buildscript { repositories { mavenCentral(); google() } }
           }
           EOF
+      - name: Traducteur du téléphone (bibliothèques compilées par « bergamot »)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: libbergamot-*
+          path: native/bergamot/lib
+          merge-multiple: true
       - name: Générer les dossiers Android/iOS
         run: flutter create --platforms=android,ios --org com.voxliso --project-name voxliso .
       - name: Configurer (caméra, voix, versions minimales)
@@ -47,7 +85,9 @@ jobs:
           grep -n -A4 "release {" android/app/build.gradle* || true
           grep -n "shrink" android/gradle.properties || true
       - run: flutter pub get
-      - name: Tests de la logique des sous-titres
+      - name: Tests de la logique des sous-titres (et vraie traduction avec Bergamot)
+        env:
+          BERGAMOT_LIB: ${{ github.workspace }}/native/bergamot/lib/libbergamot-linux-x64.so
         run: flutter test
       - name: Clé de signature fixe (mises à jour sans désinstaller)
         env:

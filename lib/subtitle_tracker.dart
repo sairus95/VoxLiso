@@ -2,6 +2,13 @@ import 'reading_vote.dart';
 import 'spell_fixer.dart' show WordList;
 import 'text_tools.dart';
 
+/// Un sous-titre déjà dit, et la dernière image où il a été vu.
+class _Said {
+  _Said(this.norm, this.seen);
+  final String norm;
+  int seen;
+}
+
 class _Token {
   _Token(this.original, this.normalized);
   final String original;
@@ -33,7 +40,12 @@ class SubtitleTracker {
   final int blankFramesToForget;
 
   static const double _sameReading = 0.80;
-  static const double _alreadySaid = 0.75;
+  static const double _alreadySaid = 0.80;
+
+  /// Un sous-titre déjà dit n'est ignoré que s'il revient peu après avoir été
+  /// vu (≈ 3 s) : c'est alors le même, relu après un reflet ou un passage
+  /// devant l'écran. Plus tard, c'est une nouvelle réplique (« Non. » … « Non. »).
+  static const int repeatWindow = 9;
   static const int _minOverlapWords = 3;
   static const int _historySize = 4;
   static const int _maxReadings = 10;
@@ -59,8 +71,12 @@ class SubtitleTracker {
   bool _waited = false;
   final List<OcrReading> _readings = [];
   int _blank = 0;
-  final List<String> _history = [];
+  final List<_Said> _history = [];
   List<String> _lastWords = const [];
+  int _frame = 0;
+
+  /// Entrée de l'historique du sous-titre affiché en ce moment.
+  _Said? _shown;
 
   void reset() {
     _candidate = null;
@@ -72,6 +88,7 @@ class SubtitleTracker {
     _blank = 0;
     _history.clear();
     _lastWords = const [];
+    _shown = null;
   }
 
   /// Donne la lecture de l'image courante (texte nettoyé, éventuellement vide),
@@ -84,6 +101,7 @@ class SubtitleTracker {
     List<OcrReading> alternatives = const [],
   }) {
     final norm = normalizeForCompare(text);
+    _frame++;
 
     if (norm.replaceAll(' ', '').length < 2) {
       // Le sous-titre a disparu pendant qu'on départageait : on le dit quand même.
@@ -111,6 +129,8 @@ class SubtitleTracker {
     String? pending;
     if (_candidate != null && similarity(norm, _candidateNorm) >= _sameReading) {
       _count++;
+      // Toujours affiché : il reste « vu à l'instant ».
+      if (_candidateDone) _shown?.seen = _frame;
       // On garde la lecture la plus complète de ce sous-titre.
       if (norm.length > _candidateNorm.length) {
         _candidate = text;
@@ -119,6 +139,7 @@ class SubtitleTracker {
     } else {
       // Nouveau sous-titre : le précédent, s'il attendait d'être départagé, est dit d'abord.
       pending = _takePending();
+      _shown = null;
       _candidate = text;
       _candidateNorm = norm;
       _count = 1;
@@ -175,9 +196,15 @@ class SubtitleTracker {
   String? _emit(String text, String norm) {
     final normWordCount = norm.split(' ').length;
     for (final said in _history) {
-      if (similarity(norm, said) >= _alreadySaid) return null;
-      // Une partie d'un sous-titre déjà lu (ex. une ligne qui disparaît).
-      if (normWordCount >= 3 && ' $said '.contains(' $norm ')) return null;
+      // Vu il y a longtemps : une nouvelle réplique, même si elle lui ressemble.
+      if (_frame - said.seen > repeatWindow) continue;
+      // Le même sous-titre, ou une partie de lui (ex. une ligne qui disparaît).
+      if (similarity(norm, said.norm) >= _alreadySaid ||
+          (normWordCount >= 3 && ' ${said.norm} '.contains(' $norm '))) {
+        said.seen = _frame;
+        _shown = said;
+        return null;
+      }
     }
 
     final tokens = _tokenize(text);
@@ -185,7 +212,9 @@ class SubtitleTracker {
     final overlap = _overlap(_lastWords, words);
 
     _lastWords = words;
-    _history.add(norm);
+    final entry = _Said(norm, _frame);
+    _history.add(entry);
+    _shown = entry;
     if (_history.length > _historySize) _history.removeAt(0);
 
     if (overlap > 0) {

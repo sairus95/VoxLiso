@@ -88,6 +88,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
   @override
   void dispose() {
     Premium.instance.removeListener(_onPremium);
+    widget.translator.onChange = null;
     _deepl.dispose();
     _azureKey.dispose();
     _azureRegion.dispose();
@@ -151,7 +152,13 @@ class _SettingsSheetState extends State<SettingsSheet> {
     SystemBridge.ttsEngines().then((e) {
       if (mounted) setState(() => _engines = e);
     });
-    widget.translator.refresh().then((_) {
+    widget.translator.onChange = () {
+      if (mounted) setState(() {});
+    };
+    widget.translator
+        .refresh()
+        .then((_) => widget.translator.refreshLanguages([for (final l in _heardLanguages) l.code]))
+        .then((_) {
       if (mounted) setState(() {});
     });
   }
@@ -528,7 +535,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
         contentPadding: EdgeInsets.zero,
         title: const Text('Vitesse automatique'),
         subtitle: const Text(
-            'La voix accélère un peu (jusqu\'à +40 %) quand les sous-titres défilent vite, '
+            'La voix accélère un peu (+40 %, jusqu\'à +60 % si elle décroche) quand les sous-titres défilent vite, '
             'pour ne pas prendre de retard, puis revient à la vitesse choisie.'),
         value: s.autoRate,
         onChanged: (v) => setState(() => s.autoRate = v),
@@ -622,163 +629,22 @@ class _SettingsSheetState extends State<SettingsSheet> {
       Text(
         'En mode Auto, un sous-titre dans une langue non cochée dans « Langues des '
         'sous-titres » (ou en slovène, vietnamien, indonésien…) est traduit automatiquement. '
-        'La langue nécessaire se télécharge '
-        'toute seule en Wi-Fi au premier besoin (environ 30 Mo). Avec une clé DeepL, la '
-        'traduction est immédiate et de meilleure qualité.',
+        '${_phoneHint(t)}',
         style: theme.textTheme.bodySmall,
       ),
       if (target.isNotEmpty) ...[
         const SizedBox(height: 8),
         Text(
           'Les sous-titres dans une autre langue sont traduits en ${languageFor(target).label} '
-          'sur le téléphone. Chaque langue se télécharge une seule fois (environ 30 Mo, '
-          'Wi-Fi conseillé) : il faut la langue des sous-titres ET la langue de traduction. '
-          'Ensuite, tout fonctionne sans internet.',
+          'sur le téléphone. ${_phoneHint(t)}',
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
-        Text('Traduction en ligne gratuite chaque mois : Microsoft Azure (facultatif)',
+        Text(
+            t.phoneLabel != null
+                ? 'Traducteur du téléphone : langues téléchargées'
+                : 'Traduction hors ligne : langues téléchargées',
             style: theme.textTheme.titleSmall),
-        const SizedBox(height: 4),
-        Text(
-          "Avec une clé Microsoft Azure Translator (palier gratuit « F0 » : 2 millions de "
-          "caractères par mois, une trentaine de films, renouvelés chaque mois), la "
-          "traduction se fait en ligne, nettement mieux que hors ligne. À créer sur "
-          "portal.azure.com : ressource « Translator », palier F0, région « Global ». "
-          "Azure passe en premier ; si son quota du mois est atteint, DeepL puis la "
-          "traduction hors ligne prennent le relais. Les sous-titres sont alors envoyés à Microsoft.",
-          style: theme.textTheme.bodySmall,
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _azureKey,
-          obscureText: true,
-          autocorrect: false,
-          enableSuggestions: false,
-          decoration: InputDecoration(
-            labelText: 'Clé Azure',
-            border: const OutlineInputBorder(),
-            helperText: AppSettings.builtInAzureKey.isNotEmpty && _azureKey.text.trim().isEmpty
-                ? 'Clé intégrée à l\'application utilisée. Collez une autre clé pour la remplacer.'
-                : null,
-            helperMaxLines: 2,
-          ),
-          onChanged: (v) => setState(() {
-            _applyAzure();
-            _azureResult = null;
-          }),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _azureRegion,
-          autocorrect: false,
-          enableSuggestions: false,
-          decoration: const InputDecoration(
-            labelText: 'Région Azure',
-            hintText: 'global, westeurope, francecentral…',
-            helperText: 'Laissez vide pour une ressource « Global ».',
-            border: OutlineInputBorder(),
-          ),
-          onChanged: (v) => setState(() {
-            _applyAzure();
-            _azureResult = null;
-          }),
-        ),
-        const SizedBox(height: 8),
-        Row(children: [
-          OutlinedButton.icon(
-            onPressed: _testingAzure ||
-                    (_azureKey.text.trim().isEmpty && AppSettings.builtInAzureKey.isEmpty)
-                ? null
-                : _testAzure,
-            icon: _testingAzure
-                ? const SizedBox(
-                    width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.check),
-            label: const Text('Tester Azure'),
-          ),
-          const SizedBox(width: 8),
-          if (_azureKey.text.isNotEmpty || _azureRegion.text.isNotEmpty)
-            TextButton(
-              onPressed: () => setState(() {
-                _azureKey.clear();
-                _azureRegion.clear();
-                _applyAzure();
-                _azureResult = null;
-              }),
-              child: const Text('Effacer'),
-            ),
-        ]),
-        if (_azureResult != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(_azureResult!, style: theme.textTheme.bodySmall),
-          ),
-        const SizedBox(height: 16),
-        Text('Meilleure qualité avec DeepL (facultatif)', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 4),
-        Text(
-          "La traduction hors ligne est parfois approximative. Avec une clé DeepL "
-          "(formule gratuite « API Developer » sur deepl.com/pro-api : 1 million de "
-          "caractères au total, une quinzaine de films), la traduction se fait en ligne, "
-          "avec une bien meilleure qualité. Les sous-titres sont alors envoyés à DeepL. "
-          "Une fois le quota épuisé, ou sans internet, VoxLiso revient tout seul à la "
-          "traduction hors ligne.",
-          style: theme.textTheme.bodySmall,
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _deepl,
-          obscureText: true,
-          autocorrect: false,
-          enableSuggestions: false,
-          decoration: InputDecoration(
-            labelText: 'Clé DeepL',
-            hintText: 'xxxxxxxx-xxxx-…:fx',
-            border: const OutlineInputBorder(),
-            helperText: AppSettings.builtInDeeplKey.isNotEmpty && _deepl.text.trim().isEmpty
-                ? 'Clé intégrée à l\'application utilisée. Collez une autre clé pour la remplacer.'
-                : null,
-            helperMaxLines: 2,
-          ),
-          onChanged: (v) => setState(() {
-            s.deeplKey = v;
-            widget.translator.deeplKey = s.effectiveDeeplKey;
-            _testResult = null;
-          }),
-        ),
-        const SizedBox(height: 8),
-        Row(children: [
-          OutlinedButton.icon(
-            onPressed: _testing ||
-                    (_deepl.text.trim().isEmpty && AppSettings.builtInDeeplKey.isEmpty)
-                ? null
-                : _testDeepl,
-            icon: _testing
-                ? const SizedBox(
-                    width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.check),
-            label: const Text('Tester la clé'),
-          ),
-          const SizedBox(width: 8),
-          if (_deepl.text.isNotEmpty)
-            TextButton(
-              onPressed: () => setState(() {
-                _deepl.clear();
-                s.deeplKey = '';
-                widget.translator.deeplKey = s.effectiveDeeplKey;
-                _testResult = null;
-              }),
-              child: const Text('Effacer'),
-            ),
-        ]),
-        if (_testResult != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(_testResult!, style: theme.textTheme.bodySmall),
-          ),
-        const SizedBox(height: 12),
-        Text('Traduction hors ligne : langues téléchargées', style: theme.textTheme.titleSmall),
         for (final l in kLanguages)
           if (_heardLanguages.contains(l) ||
               t.isDownloading(l.code) ||
@@ -788,24 +654,224 @@ class _SettingsSheetState extends State<SettingsSheet> {
             dense: true,
             title: Text(l.label),
             subtitle: Text(
-              t.isDownloading(l.code)
-                  ? 'Téléchargement en cours…'
-                  : (t.knownDownloaded(l.code) ?? false)
-                      ? 'Téléchargée'
-                      : 'Non téléchargée',
+              l.code == 'en' && t.phoneLabel == 'Firefox'
+                  ? 'Toujours disponible (langue de passage)'
+                  : t.isDownloading(l.code)
+                      ? 'Téléchargement en cours…'
+                          '${t.downloadProgress(l.code) != null ? ' ${(t.downloadProgress(l.code)! * 100).round()} %' : ''}'
+                      : (t.knownDownloaded(l.code) ?? false)
+                          ? 'Téléchargée'
+                          : 'Non téléchargée',
             ),
             trailing: t.isDownloading(l.code)
-                ? const SizedBox(
-                    width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, value: t.downloadProgress(l.code)))
                 : (t.knownDownloaded(l.code) ?? false)
-                    ? const Icon(Icons.check_circle, color: Colors.green)
+                    ? Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.check_circle, color: Colors.green),
+                        if (t.canDelete && l.code != 'en')
+                          IconButton(
+                            tooltip: 'Supprimer ${l.label}',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => _delete(l.code),
+                          ),
+                      ])
                     : TextButton(
                         onPressed: () => _download(l.code),
                         child: const Text('Télécharger'),
                       ),
           ),
+        if (Platform.isIOS && t.phoneLabel != null)
+          Text(
+            'Pour supprimer une langue : Réglages de l\'iPhone > Apps > Traduire > Langues téléchargées.',
+            style: theme.textTheme.bodySmall,
+          ),
+        const SizedBox(height: 8),
+        // DeepL et Azure : passent en premier s'il y a une clé ; repliés (le
+        // traducteur du téléphone prend le relais sans réseau ou quota épuisé).
+        Theme(
+          data: theme.copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            initiallyExpanded: _deepl.text.isNotEmpty || _azureKey.text.isNotEmpty,
+            title: const Text('Traduction en ligne (facultatif)'),
+            subtitle: Text(
+              t.phoneLabel != null
+                  ? 'Avec une clé, DeepL (puis Azure) traduit en premier : traductions plus '
+                      'naturelles. Sans réseau ou une fois le quota épuisé, le traducteur du '
+                      'téléphone prend le relais, sans clé ni limite.'
+                  : 'Clés DeepL ou Azure : traduction en ligne de meilleure qualité.',
+              style: theme.textTheme.bodySmall,
+            ),
+            children: [
+            Text('Traduction en ligne gratuite chaque mois : Microsoft Azure (facultatif)',
+                style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text(
+              "Avec une clé Microsoft Azure Translator (palier gratuit « F0 » : 2 millions de "
+              "caractères par mois, une trentaine de films, renouvelés chaque mois), la "
+              "traduction se fait en ligne. À créer sur "
+              "portal.azure.com : ressource « Translator », palier F0, région « Global ». "
+              "Azure passe après DeepL et avant le traducteur du téléphone. Les "
+              "sous-titres sont alors envoyés à Microsoft.",
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _azureKey,
+              obscureText: true,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: 'Clé Azure',
+                border: const OutlineInputBorder(),
+                helperText: AppSettings.builtInAzureKey.isNotEmpty && _azureKey.text.trim().isEmpty
+                    ? 'Clé intégrée à l\'application utilisée. Collez une autre clé pour la remplacer.'
+                    : null,
+                helperMaxLines: 2,
+              ),
+              onChanged: (v) => setState(() {
+                _applyAzure();
+                _azureResult = null;
+              }),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _azureRegion,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: 'Région Azure',
+                hintText: 'global, westeurope, francecentral…',
+                helperText: 'Laissez vide pour une ressource « Global ».',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (v) => setState(() {
+                _applyAzure();
+                _azureResult = null;
+              }),
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              OutlinedButton.icon(
+                onPressed: _testingAzure ||
+                        (_azureKey.text.trim().isEmpty && AppSettings.builtInAzureKey.isEmpty)
+                    ? null
+                    : _testAzure,
+                icon: _testingAzure
+                    ? const SizedBox(
+                        width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.check),
+                label: const Text('Tester Azure'),
+              ),
+              const SizedBox(width: 8),
+              if (_azureKey.text.isNotEmpty || _azureRegion.text.isNotEmpty)
+                TextButton(
+                  onPressed: () => setState(() {
+                    _azureKey.clear();
+                    _azureRegion.clear();
+                    _applyAzure();
+                    _azureResult = null;
+                  }),
+                  child: const Text('Effacer'),
+                ),
+            ]),
+            if (_azureResult != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(_azureResult!, style: theme.textTheme.bodySmall),
+              ),
+            const SizedBox(height: 16),
+            Text('Meilleure qualité avec DeepL (facultatif)', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text(
+              "Avec une clé DeepL (formule gratuite « API Developer » sur deepl.com/pro-api : "
+              "1 million de caractères au total, une quinzaine de films), la traduction se "
+              "fait en ligne, en premier : ce sont les traductions les plus naturelles. Les "
+              "sous-titres sont alors envoyés à DeepL. Une fois le quota épuisé, ou sans "
+              "internet, VoxLiso passe tout seul au traducteur du téléphone (ses langues "
+              "se téléchargent en Wi-Fi en attendant).",
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _deepl,
+              obscureText: true,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: 'Clé DeepL',
+                hintText: 'xxxxxxxx-xxxx-…:fx',
+                border: const OutlineInputBorder(),
+                helperText: AppSettings.builtInDeeplKey.isNotEmpty && _deepl.text.trim().isEmpty
+                    ? 'Clé intégrée à l\'application utilisée. Collez une autre clé pour la remplacer.'
+                    : null,
+                helperMaxLines: 2,
+              ),
+              onChanged: (v) => setState(() {
+                s.deeplKey = v;
+                widget.translator.deeplKey = s.effectiveDeeplKey;
+                _testResult = null;
+              }),
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              OutlinedButton.icon(
+                onPressed: _testing ||
+                        (_deepl.text.trim().isEmpty && AppSettings.builtInDeeplKey.isEmpty)
+                    ? null
+                    : _testDeepl,
+                icon: _testing
+                    ? const SizedBox(
+                        width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.check),
+                label: const Text('Tester la clé'),
+              ),
+              const SizedBox(width: 8),
+              if (_deepl.text.isNotEmpty)
+                TextButton(
+                  onPressed: () => setState(() {
+                    _deepl.clear();
+                    s.deeplKey = '';
+                    widget.translator.deeplKey = s.effectiveDeeplKey;
+                    _testResult = null;
+                  }),
+                  child: const Text('Effacer'),
+                ),
+            ]),
+            if (_testResult != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(_testResult!, style: theme.textTheme.bodySmall),
+              ),
+            ],
+          ),
+        ),
       ],
     ];
+  }
+
+  /// Explication du téléchargement des langues, selon le traducteur.
+  String _phoneHint(SubtitleTranslator t) => switch (t.phoneLabel) {
+        'Firefox' => 'Traduction sur le téléphone avec le traducteur de Firefox : gratuite, '
+            'sans limite et sans internet. Chaque langue se télécharge une fois (environ '
+            '35 Mo par sens), toute seule en Wi-Fi au premier besoin ou avec le bouton '
+            'ci-dessous. La traduction passe par l\'anglais (allemand → anglais → français).',
+        'Apple' => 'Traduction sur l\'iPhone avec le traducteur d\'Apple : gratuite, sans '
+            'limite et sans internet. Touchez « Télécharger » ci-dessous : iOS demande '
+            'de confirmer le téléchargement de la langue.',
+        _ => 'La langue nécessaire se télécharge toute seule en Wi-Fi au premier besoin '
+            '(environ 30 Mo). Il faut la langue des sous-titres ET la langue de traduction.',
+      };
+
+  Future<void> _delete(String code) async {
+    await widget.translator.delete(code);
+    if (mounted) setState(() {});
   }
 
   Future<void> _download(String code) async {

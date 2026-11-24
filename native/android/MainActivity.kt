@@ -5,6 +5,8 @@ import android.app.DownloadManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -110,6 +112,18 @@ class MainActivity : FlutterActivity() {
                         }
                     )
                 }
+                // Traducteur du téléphone : réseau sans limite (Wi-Fi) pour
+                // télécharger les langues, et dossier privé des modèles.
+                "isUnmetered" -> {
+                    val cm = getSystemService(ConnectivityManager::class.java)
+                    val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
+                    result.success(
+                        caps != null &&
+                            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+                    )
+                }
+                "filesDir" -> result.success(filesDir.absolutePath)
                 // Luminosité de l'écran pour VoxLiso seulement (-1 = celle du téléphone).
                 "setBrightness" -> {
                     val value = call.argument<Double>("value") ?: -1.0

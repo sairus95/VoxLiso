@@ -7,6 +7,7 @@ import 'dart:ui' show Rect;
 import 'package:voxliso/rate_pacer.dart';
 import 'package:voxliso/reading_vote.dart';
 import 'package:voxliso/sentence_joiner.dart';
+import 'package:voxliso/speech_service.dart';
 import 'package:voxliso/spell_fixer.dart';
 import 'package:voxliso/static_filter.dart';
 import 'package:voxliso/subtitle_locator.dart';
@@ -391,21 +392,23 @@ void main() {
       expect(p.next(0), 1.0);
       expect(p.next(10), 1.0);
     });
-    test('accélère avec le retard, sans dépasser +40 %', () {
+    test('accélère avec le retard : +40 % pour un sous-titre en attente, +60 % au plus', () {
       final p = RatePacer();
       final a = p.next(50);
       expect(a, greaterThan(1.0));
       expect(a, lessThanOrEqualTo(1.25));
+      p.next(100);
+      expect(p.next(100), 1.4);
       p.next(300);
-      expect(p.next(300), 1.4);
-      expect(p.next(1000), 1.4);
+      expect(p.next(300), 1.6);
+      expect(p.next(1000), 1.6);
     });
     test('monte par paliers et redescend doucement', () {
       final p = RatePacer();
       expect(p.next(300), 1.25); // +25 % au plus d'un coup
-      expect(p.next(300), 1.4);
+      expect(p.next(300), 1.5);
+      expect(p.next(0), closeTo(1.4, 1e-9));
       expect(p.next(0), closeTo(1.3, 1e-9));
-      expect(p.next(0), closeTo(1.2, 1e-9));
       p.reset();
       expect(p.factor, 1.0);
     });
@@ -693,6 +696,65 @@ void main() {
         t.push('');
       }
       expect(t.push('ce que je veux dire, voilà tout'), 'ce que je veux dire, voilà tout');
+    });
+  });
+  group('Phrases sautées, traductions bizarres', () {
+    test('file de la voix : de courts dialogues ne sont plus abandonnés', () {
+      // 4 répliques courtes en attente (2 sous-titres) : rien n'est retiré.
+      expect(
+        SpeechService.toDrop([
+          (batch: 1, weight: 8), (batch: 1, weight: 6),
+          (batch: 2, weight: 10), (batch: 2, weight: 7), (batch: 3, weight: 12),
+        ], SpeechService.maxWaitingChars),
+        0,
+      );
+    });
+    test('file de la voix : trop de retard, les plus anciens sous-titres entiers partent', () {
+      expect(
+        SpeechService.toDrop([
+          (batch: 1, weight: 30), (batch: 1, weight: 20),
+          (batch: 2, weight: 100), (batch: 3, weight: 120),
+        ], 240),
+        2, // les deux répliques du sous-titre 1
+      );
+      // Jamais le dernier sous-titre arrivé, même très long.
+      expect(SpeechService.toDrop([(batch: 5, weight: 400)], 240), 0);
+      expect(SpeechService.toDrop([(batch: 4, weight: 50), (batch: 5, weight: 400)], 240), 1);
+    });
+
+    test('suivi : deux répliques qui se ressemblent sont dites toutes les deux', () {
+      final t = SubtitleTracker(stableFrames: 1);
+      expect(t.push('Oui, monsieur.'), 'Oui, monsieur.');
+      expect(t.push('Non, monsieur.'), 'Non, monsieur.');
+    });
+    test('suivi : la même réplique, plus tard, est redite', () {
+      final t = SubtitleTracker(stableFrames: 1);
+      expect(t.push('Non merci.'), 'Non merci.');
+      for (var i = 0; i < 12; i++) {
+        t.push('Je ne viens pas avec toi ce soir.');
+      }
+      expect(t.push('Non merci.'), 'Non merci.');
+    });
+    test('suivi : relu juste après un trou de lecture, pas redit', () {
+      final t = SubtitleTracker(stableFrames: 1);
+      expect(t.push('Non merci.'), 'Non merci.');
+      for (var i = 0; i < 3; i++) {
+        t.push('');
+      }
+      expect(t.push('Non merci.'), isNull);
+    });
+
+    test('traduction : pause d\'un moteur en ligne selon l\'erreur', () {
+      expect(SubtitleTranslator.pauseAfter(456), const Duration(hours: 6)); // quota DeepL
+      expect(SubtitleTranslator.pauseAfter(403), const Duration(hours: 6)); // clé refusée
+      expect(SubtitleTranslator.pauseAfter(429), const Duration(seconds: 20));
+      expect(SubtitleTranslator.pauseAfter(null), const Duration(minutes: 1)); // réseau
+    });
+
+    test('langue : un sous-titre moyen et peu sûr ne fait pas changer seul', () {
+      final d = LanguageDecision('en');
+      expect(d.update('Bon appétit à tous', {'fr': 0.8}), 'en');
+      expect(d.update('Merci beaucoup, madame', {'fr': 0.8}), 'fr');
     });
   });
 }
