@@ -107,4 +107,25 @@ class SystemBridge {
       return false;
     }
   }
+
+  /// Connexion sans limite de données (Wi-Fi) : téléchargement automatique
+  /// des langues du traducteur du téléphone.
+  static Future<bool> isUnmetered() async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await _channel.invokeMethod<bool>('isUnmetered') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Dossier privé de l'application (modèles de traduction).
+  static Future<String?> filesDir() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<String>('filesDir');
+    } catch (_) {
+      return null;
+    }
+  }
 }
