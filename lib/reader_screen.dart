@@ -178,7 +178,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     await _speech.init();
     if (s.ttsEngine.isNotEmpty) await _speech.setEngine(s.ttsEngine);
     _catalog.load(await _speech.rawVoices());
-    _translator.refresh();
+    // Traduction désactivée : le traducteur du téléphone n'est pas démarré.
+    if (kTranslationEnabled) _translator.refresh();
     _autoCheckUpdate();
     await _applyVoice();
     await _initCamera();
@@ -996,6 +997,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// celle choisie dans « Traduction » ; sinon, une langue autre que
   /// fr/de/es/it/en/pt (néerlandais, polonais…) est traduite automatiquement.
   String _targetFor(String lang) {
+    // Traduction désactivée pour l'instant : chaque sous-titre est lu tel quel.
+    if (!kTranslationEnabled) return '';
     var target = s.translateTo;
     // Langue non cochée dans « Langues des sous-titres » : traduite.
     if (target.isEmpty && !s.readLanguages.contains(lang)) target = s.autoTranslateTo;
@@ -2136,13 +2139,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (s.autoLang || s.translateTo.isNotEmpty || boost > 1.0)
+          if (s.autoLang || (kTranslationEnabled && s.translateTo.isNotEmpty) || boost > 1.0)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 [
                   if (s.autoLang) 'Langue détectée : ${languageName(_langDetector.current)}',
-                  if (s.translateTo.isNotEmpty)
+                  if (kTranslationEnabled && s.translateTo.isNotEmpty)
                     'lu en ${languageFor(s.translateTo).label}'
                         '${_lastOriginal.isNotEmpty && _translationEngine.isNotEmpty ? ' ($_translationEngine)' : ''}',
                   if (boost > 1.0) 'voix accélérée ×${boost.toStringAsFixed(2).replaceAll('.', ',')}',

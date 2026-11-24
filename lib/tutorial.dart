@@ -55,7 +55,7 @@ class _TutorialScreenState extends State<TutorialScreen> {
     const _Page(
       '3. La langue',
       'Laissez « Auto » : VoxLiso reconnaît la langue de chaque sous-titre. Dans les '
-          'réglages (⚙) : choix des voix, une voix par personnage, et traduction.',
+          'réglages (⚙) : choix des voix et une voix par personnage.',
       _Picture.language,
     ),
     const _Page(
