@@ -603,4 +603,96 @@ void main() {
       expect(SentenceJoiner.join('我觉得…', '…你说得对。'), '我觉得你说得对。');
     });
   });
+  group('Mots raccourcis, phrases coupées', () {
+    test('« | » collé à des lettres : I ou l', () {
+      expect(cleanSubtitle(['|l est parti.']), 'Il est parti.');
+      expect(cleanSubtitle(['|ls arrivent']), 'Ils arrivent');
+      expect(cleanSubtitle(['A|ors on y va']), 'Alors on y va');
+      expect(cleanSubtitle(["|'homme est là"]), "l'homme est là");
+      expect(cleanSubtitle(["|'m here"]), "I'm here");
+      expect(cleanSubtitle(['Il faut a||er']), 'Il faut aller');
+      expect(cleanSubtitle(['| Bonjour |']), 'Bonjour');
+    });
+
+    test('ligne voisine : la 1re ligne d\'un sous-titre qui dépasse de la zone est lue', () {
+      const zone = Rect.fromLTRB(0.15, 0.62, 0.85, 0.95);
+      final rects = [
+        const Rect.fromLTRB(0.30, 0.55, 0.70, 0.61), // 1re ligne, au-dessus de la zone
+        const Rect.fromLTRB(0.25, 0.63, 0.75, 0.69), // 2e ligne, dans la zone
+        const Rect.fromLTRB(0.40, 0.20, 0.60, 0.26), // texte loin au-dessus
+        const Rect.fromLTRB(0.02, 0.70, 0.10, 0.73), // logo à gauche
+      ];
+      expect(linesInZone(rects, zone), [0, 1]);
+    });
+
+    test('ligne voisine : pas une ligne d\'une autre taille ou trop loin', () {
+      const line = Rect.fromLTRB(0.25, 0.63, 0.75, 0.69);
+      expect(isNeighbourLine(line, const Rect.fromLTRB(0.30, 0.55, 0.70, 0.61)), isTrue);
+      expect(isNeighbourLine(line, const Rect.fromLTRB(0.30, 0.45, 0.70, 0.51)), isFalse); // trop loin
+      expect(isNeighbourLine(line, const Rect.fromLTRB(0.40, 0.47, 0.60, 0.61)), isFalse); // bien plus haute
+      expect(isNeighbourLine(line, const Rect.fromLTRB(0.80, 0.55, 0.95, 0.61)), isFalse); // pas alignée
+    });
+
+    test('lecture renforcée : le recadrage contient la ligne qui dépasse de la zone', () {
+      const zone = Rect.fromLTRB(0.15, 0.62, 0.85, 0.95);
+      const visible = Rect.fromLTRB(0, 0, 1, 1);
+      final c = enhancedCrop(zone, [const Rect.fromLTRB(0.08, 0.64, 0.93, 0.70)], visible);
+      expect(c.left, lessThan(0.08));
+      expect(c.right, greaterThan(0.93));
+      final none = enhancedCrop(zone, const [], visible);
+      expect(none.left, 0);
+      expect(none.right, 1);
+      expect(none.top, lessThan(zone.top));
+    });
+
+    test('lecture renforcée : une ligne qui touche le bord du recadrage est écartée', () {
+      const crop = Rect.fromLTRB(0.13, 0.60, 0.87, 0.97);
+      expect(touchesCropEdge(const Rect.fromLTRB(0.13, 0.64, 0.80, 0.70), crop), isTrue);
+      expect(touchesCropEdge(const Rect.fromLTRB(0.20, 0.64, 0.868, 0.70), crop), isTrue);
+      expect(touchesCropEdge(const Rect.fromLTRB(0.20, 0.64, 0.80, 0.70), crop), isFalse);
+      // Bord du recadrage = bord de l'image : la ligne n'est pas coupée par le recadrage.
+      expect(touchesCropEdge(const Rect.fromLTRB(0.0, 0.64, 0.8, 0.70), const Rect.fromLTRB(0, 0.6, 1, 0.97)),
+          isFalse);
+    });
+
+    test('vote : un mot absent de la lecture de référence revient si d\'autres l\'ont lu', () {
+      final dict = WordList.fromWords(['je', 'pense', 'que', 'tu', 'as', 'raison', 'mes', 'amis']);
+      // Deux lectures renforcées identiques (sans le dernier mot) et une lecture normale complète.
+      expect(
+        ReadingVote.combine([
+          const OcrReading('Je pense que tu as'),
+          const OcrReading('Je pense que tu as'),
+          const OcrReading('Je pense que tu as raison'),
+          const OcrReading('Je pense que tu as raison'),
+        ], dict: dict),
+        'Je pense que tu as raison',
+      );
+      expect(
+        ReadingVote.combine([
+          const OcrReading('pense que tu as raison'),
+          const OcrReading('pense que tu as raison'),
+          const OcrReading('Je pense que tu as raison'),
+        ], dict: dict),
+        'Je pense que tu as raison',
+      );
+      // Un mot parasite vu une seule fois sur trois n'est pas ajouté.
+      expect(
+        ReadingVote.combine([
+          const OcrReading('mes amis'),
+          const OcrReading('mes amis'),
+          const OcrReading('mes x amis'),
+        ], dict: dict),
+        'mes amis',
+      );
+    });
+
+    test('suivi : après un écran vide, un sous-titre est dit en entier', () {
+      final t = SubtitleTracker(stableFrames: 1);
+      expect(t.push('Tu sais ce que je veux dire'), 'Tu sais ce que je veux dire');
+      for (var i = 0; i < 3; i++) {
+        t.push('');
+      }
+      expect(t.push('ce que je veux dire, voilà tout'), 'ce que je veux dire, voilà tout');
+    });
+  });
 }

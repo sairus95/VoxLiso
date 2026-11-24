@@ -421,7 +421,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final found = _handleResult(result, frame.uprightSize, info, ms, feedTracker: !enhance);
     if (!enhance) return;
     final main = found.fromMirror ? const <TextLine>[] : found.inZone;
-    final second = await _enhancedPass(image, cam, showBoxes: main.isEmpty);
+    final up = frame.uprightSize;
+    final second = await _enhancedPass(image, cam, showBoxes: main.isEmpty, seen: [
+      for (final l in main)
+        Rect.fromLTRB(l.boundingBox.left / up.width, l.boundingBox.top / up.height,
+            l.boundingBox.right / up.width, l.boundingBox.bottom / up.height),
+    ]);
     if (_closed || !mounted) return;
     if (main.isNotEmpty) {
       _onLines(
@@ -471,8 +476,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// sous-titres pâles, à contour, lointains ou avec des reflets.
   /// Renvoie les lignes lues dans la zone (null si l'image n'a pas pu être lue).
   /// [showBoxes] : afficher ses cadres (quand l'image normale n'a rien trouvé).
+  /// [seen] : lignes retenues sur l'image normale (fractions de l'image) ; le
+  /// recadrage les contient en entier, même si elles dépassent de la zone.
   Future<List<TextLine>?> _enhancedPass(CameraImage image, CameraDescription cam,
-      {required bool showBoxes}) async {
+      {required bool showBoxes, List<Rect> seen = const []}) async {
     final crop = _crop;
     final zone = Rect.fromLTRB(
       crop.ox + s.roiLeft * crop.vw,
@@ -480,7 +487,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       crop.ox + s.roiRight * crop.vw,
       crop.oy + _roiBottom * crop.vh,
     );
-    final e = buildEnhancedInput(image, cam, _orientation, zone);
+    final visible = Rect.fromLTRB(crop.ox, crop.oy, crop.ox + crop.vw, crop.oy + crop.vh);
+    final e = buildEnhancedInput(image, cam, _orientation, enhancedCrop(zone, seen, visible));
     if (e == null) return null;
     final RecognizedText result;
     final started = DateTime.now();
@@ -491,13 +499,18 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     if (_closed || !mounted) return null;
     final ms = DateTime.now().difference(started).inMilliseconds;
-    final found = <(TextLine, Rect)>[];
+    final read = <(TextLine, Rect)>[];
     for (final block in result.blocks) {
       for (final line in block.lines) {
         final full = e.toFull(line.boundingBox);
-        if (zone.contains(full.center)) found.add((line, full));
+        // Coupée par le bord du recadrage : lettres ou mots en moins, écartée.
+        if (!touchesCropEdge(full, e.zone)) read.add((line, full));
       }
     }
+    // Même règle que l'image normale (zone, et ligne voisine d'un sous-titre).
+    final found = [
+      for (final i in linesInZone([for (final r in read) r.$2], zone)) read[i],
+    ];
     found.sort((a, b) {
       final dy = a.$2.center.dy - b.$2.center.dy;
       if (dy.abs() < math.min(a.$2.height, b.$2.height) * 0.5) {
@@ -579,26 +592,26 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final mBottom = mirror == null ? 0.0 : (crop.oy + mirror.$2 * crop.vh) * h;
 
     final all = <TextLine>[];
-    final lines = <TextLine>[];
-    final mirrorLines = <TextLine>[];
     for (final block in result.blocks) {
       for (final line in block.lines) {
-        final r = line.boundingBox;
         // Hors de l'aperçu : ni affichée ni lue.
-        if (!visible.contains(r.center)) continue;
-        all.add(line);
-        // Lue si son centre est entre les bords gauche et droit de la zone et
-        // si au moins la moitié de sa hauteur est entre les bords haut et bas.
-        if (r.center.dx < left || r.center.dx > right || r.height <= 0) continue;
-        final overlap = math.min(r.bottom, bottom) - math.max(r.top, top);
-        if (overlap >= r.height * 0.5) {
-          lines.add(line);
-        } else if (mirror != null &&
-            math.min(r.bottom, mBottom) - math.max(r.top, mTop) >= r.height * 0.5) {
-          mirrorLines.add(line);
-        }
+        if (visible.contains(line.boundingBox.center)) all.add(line);
       }
     }
+    // Lue si son centre est entre les bords gauche et droit de la zone et si
+    // au moins la moitié de sa hauteur est entre les bords haut et bas ; plus
+    // l'autre ligne d'un sous-titre sur deux lignes qui dépasse de la zone.
+    final rects = [for (final l in all) l.boundingBox];
+    final inIdx = linesInZone(rects, Rect.fromLTRB(left, top, right, bottom)).toSet();
+    final lines = [
+      for (var i = 0; i < all.length; i++)
+        if (inIdx.contains(i)) all[i],
+    ];
+    final mirrorLines = <TextLine>[
+      if (mirror != null)
+        for (final i in linesInZone(rects, Rect.fromLTRB(left, mTop, right, mBottom)))
+          if (!inIdx.contains(i)) all[i],
+    ];
     lines.sort((a, b) => _byPosition(a.boundingBox, b.boundingBox));
     mirrorLines.sort((a, b) => _byPosition(a.boundingBox, b.boundingBox));
 
@@ -699,19 +712,18 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     final (top, bottom) = _screenBand(f.landscape);
     final mirror = _screenMirror(f.landscape);
-    final inZone = <ScreenLine>[];
-    final inMirror = <ScreenLine>[];
-    for (final l in f.lines) {
-      final r = l.rect;
-      if (r.height <= 0) continue;
-      final overlap = math.min(r.bottom, bottom) - math.max(r.top, top);
-      if (overlap >= r.height * 0.5) {
-        inZone.add(l);
-      } else if (mirror != null &&
-          math.min(r.bottom, mirror.$2) - math.max(r.top, mirror.$1) >= r.height * 0.5) {
-        inMirror.add(l);
-      }
-    }
+    // Toute la largeur ; l'autre ligne d'un sous-titre qui dépasse de la bande est lue aussi.
+    final rects = [for (final l in f.lines) l.rect];
+    final inIdx = linesInZone(rects, Rect.fromLTRB(0, top, 1, bottom)).toSet();
+    final inZone = <ScreenLine>[
+      for (var i = 0; i < f.lines.length; i++)
+        if (inIdx.contains(i)) f.lines[i],
+    ];
+    final inMirror = <ScreenLine>[
+      if (mirror != null)
+        for (final i in linesInZone(rects, Rect.fromLTRB(0, mirror.$1, 1, mirror.$2)))
+          if (!inIdx.contains(i)) f.lines[i],
+    ];
     inZone.sort((a, b) => _byPosition(a.rect, b.rect));
     inMirror.sort((a, b) => _byPosition(a.rect, b.rect));
     final candidates = [...inZone, ...inMirror];
