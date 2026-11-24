@@ -86,20 +86,48 @@ class ReadingVote {
     // Variantes proposées pour chaque mot de la référence : (mot, n° de lecture).
     final cands = List.generate(pTok.length, (k) => <(String, int)>[(pTok[k], pivot)]);
     final gaps = List<int>.filled(pTok.length, 0);
+    // Mots d'une autre lecture absents de la référence, rangés par place :
+    // inserts[k + 1] = mots lus entre le mot k et le mot k + 1 de la référence
+    // (inserts[0] : avant le premier). Une lecture par entrée : (mots, n° de lecture).
+    final inserts = List.generate(pTok.length + 1, (_) => <(List<String>, int)>[]);
     for (var i = 0; i < rs.length; i++) {
       if (i == pivot) continue;
       final match = _align(pNorm, norms[i]);
+      final slotOf = List<int>.filled(toks[i].length, -1);
+      final matched = List<bool>.filled(toks[i].length, false);
       for (var k = 0; k < pTok.length; k++) {
         final j = match[k];
         if (j == null) {
           gaps[k]++;
         } else {
           cands[k].add((toks[i][j], i));
+          matched[j] = true;
         }
       }
+      // Place de chaque mot non apparié : après le dernier mot de la référence apparié avant lui.
+      var lastK = -1;
+      var next = 0;
+      for (var j = 0; j < toks[i].length; j++) {
+        while (next < pTok.length && (match[next] == null || match[next]! < j)) {
+          if (match[next] != null) lastK = next;
+          next++;
+        }
+        slotOf[j] = lastK + 1;
+      }
+      final bySlot = <int, List<String>>{};
+      for (var j = 0; j < toks[i].length; j++) {
+        if (!matched[j]) bySlot.putIfAbsent(slotOf[j], () => []).add(toks[i][j]);
+      }
+      bySlot.forEach((slot, words) => inserts[slot].add((words, i)));
     }
 
     final out = <String>[];
+    void addInserted(int slot) {
+      final words = _inserted(inserts[slot], rs, dict);
+      if (words != null) out.addAll(words);
+    }
+
+    addInserted(0);
     for (var k = 0; k < pTok.length; k++) {
       // Variantes regroupées par forme simplifiée (« raison. » et « raison » votent ensemble).
       final groups = <String, List<(String, int)>>{};
@@ -126,10 +154,59 @@ class ReadingVote {
         }
       });
       // Mot présent dans une seule lecture, absent des autres : sans doute du bruit.
-      if (gaps[k] * _gapVote > bestScore) continue;
-      out.add(bestWord!);
+      if (gaps[k] * _gapVote <= bestScore) out.add(bestWord!);
+      addInserted(k + 1);
     }
     return joinTokens(out);
+  }
+
+  /// Mots absents de la lecture de référence mais lus par d'autres lectures au
+  /// même endroit ([proposals] : (mots, n° de lecture)). Ils sont ajoutés avec
+  /// la même règle que celle qui retire un mot : voix des lectures qui les
+  /// ont (+ dictionnaire, + confiance) contre 0,8 par lecture qui ne les a pas.
+  /// Ainsi, une référence qui a perdu un mot ne le fait pas perdre au texte.
+  static List<String>? _inserted(
+      List<(List<String>, int)> proposals, List<OcrReading> rs, WordList? dict) {
+    if (proposals.isEmpty) return null;
+    final groups = <String, List<(List<String>, int)>>{};
+    for (final p in proposals) {
+      groups.putIfAbsent(p.$1.map(_norm).join(' '), () => []).add(p);
+    }
+    String? bestNorm;
+    var bestCount = 0;
+    groups.forEach((norm, members) {
+      if (members.length > bestCount) {
+        bestCount = members.length;
+        bestNorm = norm;
+      }
+    });
+    // Lectures qui ont à peu près les mêmes mots à cet endroit.
+    final support = [
+      for (final e in groups.entries)
+        if (similarity(e.key, bestNorm!) >= 0.75) ...e.value,
+    ];
+    final best = groups[bestNorm]!;
+    // Orthographe : la suite de mots la plus vue dans le groupe.
+    final spellings = <String, (List<String>, int)>{};
+    for (final m in best) {
+      final key = m.$1.join(' ');
+      final prev = spellings[key];
+      spellings[key] = (m.$1, (prev?.$2 ?? 0) + 1);
+    }
+    final words = spellings.values.reduce((a, b) => b.$2 > a.$2 ? b : a).$1;
+
+    var score = support.length.toDouble();
+    if (words.every((w) => isKnownWord(w, dict))) score += dictBonus;
+    final confs = <double>[
+      for (final m in support)
+        for (final w in m.$1)
+          if (rs[m.$2].confidence[_norm(w)] != null) rs[m.$2].confidence[_norm(w)]!,
+    ];
+    if (confs.isNotEmpty) {
+      score += confidenceWeight * confs.reduce((a, b) => a + b) / confs.length;
+    }
+    final absent = rs.length - support.length;
+    return absent * _gapVote > score ? null : words;
   }
 
   /// Réunit des mots : avec des espaces, sauf autour d'un caractère chinois

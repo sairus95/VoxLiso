@@ -9,6 +9,21 @@ final RegExp _inlineDialogue = RegExp(r'(?<=[.!?…])\s+[-–—]\s+');
 final RegExp _letter = RegExp(r'\p{L}', unicode: true);
 final RegExp _endsWithPunct = RegExp(r'[.!?…:;,。！？、，：；]$');
 final RegExp _spaces = RegExp(r'\s+');
+final RegExp _pipeIl = RegExp(r'(?<!\p{L})\|(?=[lL][sS]?(?!\p{L}))', unicode: true);
+final RegExp _pipeEnglishI = RegExp(r"\|(?=['’](?:m|ll|ve|d)(?!\p{L}))", unicode: true);
+final RegExp _pipeInWord = RegExp(r"\|(?=['’]?\p{L})|(?<=\p{L})\|", unicode: true);
+
+/// « | » collé à des lettres : un « I » ou un « l » mal lu par l'OCR, qui
+/// coupait le mot en deux une fois le « | » retiré. « |l » -> « Il »,
+/// « a|ors » -> « alors », « |'homme » -> « l'homme », « |'m » -> « I'm ».
+/// Un « | » isolé reste un symbole parasite.
+String fixPipes(String line) {
+  if (!line.contains('|')) return line;
+  return line
+      .replaceAll(_pipeIl, 'I')
+      .replaceAll(_pipeEnglishI, 'I')
+      .replaceAll(_pipeInWord, 'l');
+}
 
 /// Transforme les lignes lues par l'OCR en une phrase prête à être dite.
 ///
@@ -37,7 +52,7 @@ List<String> subtitleParts(List<String> lines, {bool removeSoundTags = true}) {
   for (final raw in expanded) {
     var line = raw.trim();
     if (removeSoundTags) line = line.replaceAll(_soundTags, ' ');
-    line = line.replaceAll(_junkChars, ' ').replaceAll(_spaces, ' ').trim();
+    line = fixPipes(line).replaceAll(_junkChars, ' ').replaceAll(_spaces, ' ').trim();
     if (line.isEmpty || !_looksLikeText(line)) continue;
 
     if (_dialogueDash.hasMatch(line)) {

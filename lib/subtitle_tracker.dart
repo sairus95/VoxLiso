@@ -37,6 +37,7 @@ class SubtitleTracker {
   static const int _minOverlapWords = 3;
   static const int _historySize = 4;
   static const int _maxReadings = 10;
+  static const int _blankEndsRolling = 3;
 
   /// Dictionnaire de la langue en cours (ou null), pour départager les lectures.
   WordList? Function()? dictionary;
@@ -95,6 +96,10 @@ class SubtitleTracker {
         _candidateDone = false;
         _readings.clear();
       }
+      // Écran vide depuis 1 s : le sous-titre suivant est un nouveau sous-titre,
+      // pas la suite d'un sous-titre en direct qui défile (sinon, s'il commence
+      // par les derniers mots du précédent, son début serait sauté).
+      if (_blank >= _blankEndsRolling) _lastWords = const [];
       if (_blank >= blankFramesToForget) {
         _history.clear();
         _lastWords = const [];
