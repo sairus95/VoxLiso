@@ -49,9 +49,33 @@ class SpeechService {
   /// Accélération en cours (1.0 = aucune), pour l'afficher.
   final ValueNotifier<double> boost = ValueNotifier(1.0);
 
-  /// Au-delà, les plus anciennes phrases en attente sont abandonnées
-  /// pour ne pas prendre de retard sur l'image.
-  static const int _maxQueue = 4;
+  /// Au-delà de ce retard (caractères en attente, chinois/japonais/coréen ×3),
+  /// les plus anciens sous-titres en attente sont abandonnés pour ne pas
+  /// décrocher de l'image : environ 12 s de parole. Avant la v1.0.62, la limite
+  /// était de 4 répliques : deux dialogues courts (« - Quoi ? - Rien. ») en
+  /// attente suffisaient à faire sauter des phrases sans vrai retard.
+  static const int maxWaitingChars = 240;
+
+  /// Sous-titres abandonnés depuis le début (diagnostic).
+  int dropped = 0;
+
+  /// Nombre de phrases à retirer en tête de file pour revenir sous [maxChars] :
+  /// des sous-titres entiers (toutes leurs répliques), les plus anciens, jamais
+  /// le dernier arrivé. [queue] : (n° de sous-titre, poids en caractères).
+  static int toDrop(List<({int batch, int weight})> queue, int maxChars) {
+    var total = queue.fold<int>(0, (n, e) => n + e.weight);
+    if (queue.isEmpty || total <= maxChars) return 0;
+    final last = queue.last.batch;
+    var i = 0;
+    while (total > maxChars && i < queue.length && queue[i].batch != last) {
+      final b = queue[i].batch;
+      while (i < queue.length && queue[i].batch == b) {
+        total -= queue[i].weight;
+        i++;
+      }
+    }
+    return i;
+  }
 
   Future<void> init() async {
     await _tts.awaitSpeakCompletion(true);
@@ -157,8 +181,15 @@ class SpeechService {
       if (_speaking) _tts.stop();
     } else {
       _queue.addAll(entries);
-      while (_queue.length > _maxQueue) {
-        _queue.removeFirst();
+      final n = toDrop([
+        for (final e in _queue) (batch: e.batch, weight: speechWeight(e.u.text)),
+      ], maxWaitingChars);
+      if (n > 0) {
+        final batches = <int>{};
+        for (var i = 0; i < n; i++) {
+          batches.add(_queue.removeFirst().batch);
+        }
+        dropped += batches.length;
       }
     }
     _drain();

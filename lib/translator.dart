@@ -16,12 +16,16 @@ class TranslationResult {
   final String engine;
 }
 
-/// Traduction des sous-titres, dans cet ordre :
+/// Traduction des sous-titres, dans cet ordre (choix de l'utilisateur, 24/11/2026 :
+/// « DeepL d'abord ») :
+///  - DeepL, avec une clé : les traductions les plus naturelles, tant que son
+///    quota dure ; puis Microsoft Azure Translator, avec une clé ;
 ///  - le traducteur du téléphone (Firefox sur Android, Apple sur iPhone) :
-///    gratuit, sans limite et sans internet, une fois les langues téléchargées ;
-///  - en attendant (langue pas encore téléchargée) ou s'il n'existe pas sur ce
-///    téléphone : Microsoft Azure Translator, puis DeepL, avec une clé ;
+///    gratuit, sans limite et sans internet, une fois les langues téléchargées
+///    (elles se téléchargent en Wi-Fi pendant que DeepL traduit, pour la suite) ;
 ///  - enfin ML Kit (hors ligne, moins bon), si ses langues sont là.
+/// Un moteur en ligne en panne (réseau, quota, clé refusée) est mis en pause
+/// quelque temps : les sous-titres suivants n'attendent pas sa réponse.
 class SubtitleTranslator {
   SubtitleTranslator({PhoneTranslator? phone, bool usePhone = true})
       : phone = usePhone ? (phone ?? PhoneTranslator.create()) : null {
@@ -50,6 +54,24 @@ class SubtitleTranslator {
 
   /// Dernière erreur DeepL, pour l'afficher dans les réglages.
   String? deeplError;
+
+  /// Moteurs en ligne en pause après une panne : jusqu'à quand, et pour quelle clé
+  /// (une nouvelle clé lève la pause).
+  DateTime? _deeplPausedUntil;
+  String _deeplPausedKey = '';
+  DateTime? _azurePausedUntil;
+  String _azurePausedKey = '';
+
+  /// Durée de pause d'un moteur en ligne après une réponse [status]
+  /// (null : pas de réponse, réseau coupé ou trop lent).
+  static Duration pauseAfter(int? status) => switch (status) {
+        456 || 403 || 401 => const Duration(hours: 6), // quota épuisé, clé refusée
+        429 => const Duration(seconds: 20), // surchargé
+        _ => const Duration(minutes: 1), // réseau, autre erreur
+      };
+
+  static bool _paused(DateTime? until, String pausedKey, String key) =>
+      until != null && pausedKey == key && DateTime.now().isBefore(until);
   final OnDeviceTranslatorModelManager _models = OnDeviceTranslatorModelManager();
   final Map<String, OnDeviceTranslator> _translators = {};
   final Map<String, bool> _downloaded = {};
@@ -175,34 +197,38 @@ class SubtitleTranslator {
   }
 
   /// Traduit plusieurs phrases (ex. les répliques d'un dialogue) d'un coup :
-  /// traducteur du téléphone, sinon Azure / DeepL (avec une clé), sinon ML Kit.
+  /// DeepL / Azure (avec une clé), sinon le traducteur du téléphone, sinon ML Kit.
   /// Renvoie null si aucune traduction n'est possible.
   Future<TranslationResult?> translateAll(List<String> texts, String from, String to) async {
     if (from == to) return TranslationResult(texts, '');
     final prepared = [for (final t in texts) prepareForTranslation(t)];
     final p = phoneReady ? phone : null;
-    if (p != null && await p.canTranslateNow(from, to)) {
-      final out = await p
-          .translate(prepared, from, to)
-          .timeout(const Duration(seconds: 8), onTimeout: () => null);
-      if (out != null) {
-        autoDownloading.clear();
-        return TranslationResult(out, 'téléphone');
-      }
-    }
-    // Langue pas encore sur le téléphone : téléchargement en Wi-Fi, pour la suite.
-    if (p != null) {
+    final phoneNow = p != null && await p.canTranslateNow(from, to);
+    // Langue pas encore sur le téléphone : téléchargement en Wi-Fi, pour quand
+    // DeepL ne sera plus là (quota épuisé, pas de réseau).
+    if (p != null && !phoneNow) {
       autoDownloading
         ..clear()
         ..addAll(p.autoDownload(from, to));
+    } else {
+      autoDownloading.clear();
     }
-    if (azureKey.trim().isNotEmpty) {
+
+    final dKey = deeplKey.trim();
+    if (dKey.isNotEmpty && !_paused(_deeplPausedUntil, _deeplPausedKey, dKey)) {
+      final online = await _deepl(prepared, from, to);
+      if (online != null) return TranslationResult(online, 'DeepL');
+    }
+    final aKey = azureKey.trim();
+    if (aKey.isNotEmpty && !_paused(_azurePausedUntil, _azurePausedKey, aKey)) {
       final online = await _azure(prepared, from, to);
       if (online != null) return TranslationResult(online, 'Azure');
     }
-    if (deeplKey.trim().isNotEmpty) {
-      final online = await _deepl(prepared, from, to);
-      if (online != null) return TranslationResult(online, 'DeepL');
+    if (phoneNow && p != null) {
+      final out = await p
+          .translate(prepared, from, to)
+          .timeout(const Duration(seconds: 8), onTimeout: () => null);
+      if (out != null) return TranslationResult(out, 'téléphone');
     }
     final out = <String>[];
     for (final t in prepared) {
@@ -229,32 +255,47 @@ class SubtitleTranslator {
         ..contentType = ContentType.json;
       req.write(jsonEncode({
         'text': texts,
-        // DeepL écrit le norvégien « NB ».
-        'source_lang': from == 'no' ? 'NB' : from.toUpperCase(),
+        // Pas de langue source : DeepL la reconnaît lui-même sur tout le sous-titre.
+        // Une langue mal reconnue par VoxLiso (sous-titre court, nom propre)
+        // donnait sinon une traduction bizarre.
         'target_lang': deeplTarget(to),
       }));
       final res = await req.close().timeout(const Duration(seconds: 5));
       final body = await res.transform(utf8.decoder).join();
       if (res.statusCode != 200) {
         deeplError = switch (res.statusCode) {
-          403 => 'Clé DeepL refusée : vérifiez-la.',
-          456 => 'Quota DeepL du mois atteint : traduction hors ligne en attendant.',
-          429 => 'DeepL est surchargé : traduction hors ligne pour ce sous-titre.',
-          _ => 'DeepL a répondu ${res.statusCode}.',
+          403 => 'Clé DeepL refusée : vérifiez-la. Autre traducteur en attendant.',
+          456 => 'Quota DeepL atteint : traducteur du téléphone à la place.',
+          429 => 'DeepL est surchargé : autre traducteur pour quelques sous-titres.',
+          _ => 'DeepL a répondu ${res.statusCode} : autre traducteur.',
         };
+        _pauseDeepl(key, res.statusCode);
         return null;
       }
       final list = (jsonDecode(body) as Map<String, dynamic>)['translations'] as List;
       deeplError = null;
+      _deeplPausedUntil = null;
       final out = [for (final t in list) (t as Map)['text'].toString()];
       return out.length == texts.length ? out : null;
     } on TimeoutException {
-      deeplError = 'DeepL ne répond pas : traduction hors ligne.';
+      deeplError = 'DeepL ne répond pas : autre traducteur pendant une minute.';
+      _pauseDeepl(key, null);
       return null;
     } catch (_) {
-      deeplError = 'Pas de connexion à DeepL : traduction hors ligne.';
+      deeplError = 'Pas de connexion à DeepL : autre traducteur pendant une minute.';
+      _pauseDeepl(key, null);
       return null;
     }
+  }
+
+  void _pauseDeepl(String key, int? status) {
+    _deeplPausedKey = key;
+    _deeplPausedUntil = DateTime.now().add(pauseAfter(status));
+  }
+
+  void _pauseAzure(String key, int? status) {
+    _azurePausedKey = key;
+    _azurePausedUntil = DateTime.now().add(pauseAfter(status));
   }
 
   /// Essaie un moteur en ligne seul (« Azure » ou « DeepL ») sur une phrase
@@ -337,16 +378,21 @@ class SubtitleTranslator {
       final body = await res.transform(utf8.decoder).join();
       if (res.statusCode != 200) {
         azureError = azureErrorMessage(res.statusCode, body);
+        // Langue non traduite par Azure : pas de pause (les autres langues marchent).
+        if (res.statusCode != 400) _pauseAzure(key, res.statusCode);
         return null;
       }
       final out = parseAzure(body, texts.length);
       azureError = out == null ? 'Réponse d\'Azure illisible.' : null;
+      if (out != null) _azurePausedUntil = null;
       return out;
     } on TimeoutException {
       azureError = 'Azure ne répond pas : autre traduction.';
+      _pauseAzure(key, null);
       return null;
     } catch (_) {
       azureError = 'Pas de connexion à Azure : autre traduction.';
+      _pauseAzure(key, null);
       return null;
     }
   }

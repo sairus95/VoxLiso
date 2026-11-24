@@ -648,6 +648,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           'Texte trouvé : ${all.length} ligne(s), ${lines.length} '
           '${fromMirror ? 'dans la zone du haut' : 'dans la zone'}'
           '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
+          '${_speech.dropped == 0 ? '' : '\n${_speech.dropped} sous-titre(s) non dit(s) : voix trop en retard'}'
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
     });
 
@@ -1025,17 +1026,18 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         out = result.texts;
         speakLang = target;
         _translationEngine = result.engine;
-        // Azure ou DeepL réglé mais indisponible : on le signale, la lecture continue.
-        if (result.engine == 'hors ligne' &&
-            (s.effectiveAzureKey.isNotEmpty || s.effectiveDeeplKey.isNotEmpty)) {
-          warning = _translator.azureError ?? _translator.deeplError;
+        // DeepL ou Azure réglé mais indisponible (quota, réseau) : on le signale,
+        // la lecture continue avec le traducteur du téléphone ou ML Kit.
+        if (result.engine != 'DeepL' && result.engine != 'Azure') {
+          warning = (s.effectiveDeeplKey.isNotEmpty ? _translator.deeplError : null) ??
+              (s.effectiveAzureKey.isNotEmpty ? _translator.azureError : null);
         }
       } else if (_translator.autoDownloading.isNotEmpty) {
         warning = 'Téléchargement de ${_translator.autoDownloading.map(languageName).join(' et ')} '
             'pour la traduction (en Wi-Fi). En attendant : lecture dans la langue d\'origine.';
       } else {
-        warning = _translator.azureError ??
-            _translator.deeplError ??
+        warning = _translator.deeplError ??
+            _translator.azureError ??
             'Traduction impossible : téléchargez ${languageName(lang)} et '
                 '${languageName(target)} dans les réglages (section Traduction).';
       }

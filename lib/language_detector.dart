@@ -21,8 +21,14 @@ class LanguageDecision {
   int _pendingCount = 0;
 
   static const int minLetters = 8;
-  static const int strongLetters = 15;
-  static const double strongConfidence = 0.75;
+
+  /// Changement sur un seul sous-titre : au moins 20 lettres (15 en chinois,
+  /// japonais, coréen, où l'écriture suffit à trancher) et une confiance de
+  /// 0,85. Sinon il faut deux sous-titres de suite : une langue mal reconnue
+  /// faisait lire ou traduire de travers (v1.0.62, avant 15 lettres et 0,75).
+  static const int strongLetters = 20;
+  static const int strongLettersCjk = 15;
+  static const double strongConfidence = 0.85;
   static const double weakConfidence = 0.40;
 
   /// [scores] : code de langue -> confiance (0..1), tel que renvoyé par ML Kit.
@@ -31,9 +37,12 @@ class LanguageDecision {
     // Un idéogramme, un kana ou une syllabe coréenne compte pour trois lettres :
     // « 你在做什么 » est aussi parlant qu'une phrase de quinze lettres.
     var letters = 0;
+    var cjk = false;
     for (final m in RegExp(r'\p{L}', unicode: true).allMatches(text)) {
       final r = m.group(0)!.runes.first;
-      letters += isCjkRune(r) || isHangulRune(r) ? 3 : 1;
+      final wide = isCjkRune(r) || isHangulRune(r);
+      cjk = cjk || wide;
+      letters += wide ? 3 : 1;
     }
     if (letters < minLetters) return current;
 
@@ -55,7 +64,7 @@ class LanguageDecision {
       _pendingCount = 0;
       return current;
     }
-    if (bestScore >= strongConfidence && letters >= strongLetters) {
+    if (bestScore >= strongConfidence && letters >= (cjk ? strongLettersCjk : strongLetters)) {
       return _switchTo(best!);
     }
     if (_pending == best) {

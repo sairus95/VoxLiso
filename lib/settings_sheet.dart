@@ -479,7 +479,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
         contentPadding: EdgeInsets.zero,
         title: const Text('Vitesse automatique'),
         subtitle: const Text(
-            'La voix accélère un peu (jusqu\'à +40 %) quand les sous-titres défilent vite, '
+            'La voix accélère un peu (+40 %, jusqu\'à +60 % si elle décroche) quand les sous-titres défilent vite, '
             'pour ne pas prendre de retard, puis revient à la vitesse choisie.'),
         value: s.autoRate,
         onChanged: (v) => setState(() => s.autoRate = v),
@@ -627,7 +627,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
             style: theme.textTheme.bodySmall,
           ),
         const SizedBox(height: 8),
-        // Azure et DeepL : facultatifs, repliés (la traduction se fait sur le téléphone).
+        // DeepL et Azure : passent en premier s'il y a une clé ; repliés (le
+        // traducteur du téléphone prend le relais sans réseau ou quota épuisé).
         Theme(
           data: theme.copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
@@ -638,9 +639,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
             title: const Text('Traduction en ligne (facultatif)'),
             subtitle: Text(
               t.phoneLabel != null
-                  ? 'Aucune clé nécessaire : la traduction se fait sur le téléphone. '
-                      'Azure ou DeepL ne servent qu\'en attendant le téléchargement d\'une langue.'
-                  : 'Clés Azure ou DeepL : traduction en ligne de meilleure qualité.',
+                  ? 'Avec une clé, DeepL (puis Azure) traduit en premier : traductions plus '
+                      'naturelles. Sans réseau ou une fois le quota épuisé, le traducteur du '
+                      'téléphone prend le relais, sans clé ni limite.'
+                  : 'Clés DeepL ou Azure : traduction en ligne de meilleure qualité.',
               style: theme.textTheme.bodySmall,
             ),
             children: [
@@ -652,9 +654,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
               "caractères par mois, une trentaine de films, renouvelés chaque mois), la "
               "traduction se fait en ligne. À créer sur "
               "portal.azure.com : ressource « Translator », palier F0, région « Global ». "
-              "Le traducteur du téléphone passe en premier ; Azure sert tant qu'une langue "
-              "n'est pas encore téléchargée (ou si le téléphone n'a pas de traducteur), puis "
-              "DeepL. Les sous-titres sont alors envoyés à Microsoft.",
+              "Azure passe après DeepL et avant le traducteur du téléphone. Les "
+              "sous-titres sont alors envoyés à Microsoft.",
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -728,9 +729,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
             Text(
               "Avec une clé DeepL (formule gratuite « API Developer » sur deepl.com/pro-api : "
               "1 million de caractères au total, une quinzaine de films), la traduction se "
-              "fait en ligne tant qu'une langue n'est pas encore sur le téléphone. Les "
+              "fait en ligne, en premier : ce sont les traductions les plus naturelles. Les "
               "sous-titres sont alors envoyés à DeepL. Une fois le quota épuisé, ou sans "
-              "internet, VoxLiso revient tout seul à la traduction du téléphone.",
+              "internet, VoxLiso passe tout seul au traducteur du téléphone (ses langues "
+              "se téléchargent en Wi-Fi en attendant).",
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
