@@ -156,6 +156,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       ..azureKey = s.effectiveAzureKey
       ..azureRegion = s.effectiveAzureRegion;
     _history.decode(s.historyJson);
+    // Barre de langue : « Auto » ou la langue du téléphone. Une autre langue
+    // choisie avant (barre de 6 langues, jusqu'à la v1.0.68) revient à « Auto ».
+    if (!s.autoLang && s.lang != _phoneLang.code) s.lang = 'auto';
     _applyScript();
     if (ScreenCapture.isAvailable) {
       _screen.listen();
@@ -1540,15 +1543,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     await _applyVoice();
   }
 
-  /// Langues de la barre : celles cochées dans les réglages, plus la langue
-  /// choisie si elle n'y est plus.
-  List<SubtitleLanguage> get _barLanguages {
-    final codes = s.readLanguages;
-    return [
-      for (final l in kLanguages)
-        if (codes.contains(l.code) || l.code == s.lang) l,
-    ];
-  }
+  /// Langue du téléphone : le 2e bouton de la barre de langue, à côté de
+  /// « Auto » (demande du 25/11/2026).
+  SubtitleLanguage get _phoneLang =>
+      phoneLanguage(WidgetsBinding.instance.platformDispatcher.locale.toLanguageTag());
 
   static TextRecognitionScript _mlkitScript(SubtitleScript script) => switch (script) {
         SubtitleScript.latin => TextRecognitionScript.latin,
@@ -1807,8 +1805,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _buildZoneButtons(large),
       ],
       const SizedBox(height: 8),
-      if (_barLanguages.length <= 6)
-        FittedBox(
+      // Langue : « Auto » (reconnue sur chaque sous-titre) ou celle du téléphone.
+      Builder(builder: (context) {
+        final phone = _phoneLang;
+        return FittedBox(
           fit: BoxFit.scaleDown,
           child: SegmentedButton<String>(
             segments: [
@@ -1817,10 +1817,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                 label: Text('Auto'),
                 tooltip: 'Détection automatique de la langue',
               ),
-              for (final l in _barLanguages)
-                ButtonSegment(value: l.code, label: Text(l.short), tooltip: l.label),
+              ButtonSegment(
+                value: phone.code,
+                label: Text(phone.label),
+                tooltip: 'Langue du téléphone : tout est lu en ${phone.label.toLowerCase()}',
+              ),
             ],
-            selected: {s.lang},
+            selected: {s.lang == phone.code ? phone.code : 'auto'},
             showSelectedIcon: false,
             style: ButtonStyle(
               visualDensity: large ? VisualDensity.standard : VisualDensity.compact,
@@ -1828,33 +1831,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
             ),
             onSelectionChanged: (v) => _setLanguage(v.first),
           ),
-        )
-      else
-        // Plus de 6 langues : une rangée de boutons qu'on fait défiler.
-        SizedBox(
-          height: large ? 56 : 40,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              for (final (code, label, tip) in [
-                ('auto', 'Auto', 'Détection automatique de la langue'),
-                for (final l in _barLanguages) (l.code, l.short, l.label),
-              ])
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: Tooltip(
-                    message: tip,
-                    child: ChoiceChip(
-                      label: Text(label),
-                      selected: s.lang == code,
-                      showCheckmark: false,
-                      onSelected: (_) => _setLanguage(code),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
+        );
+      }),
       const SizedBox(height: 12),
       SizedBox(
         height: large ? 104 : 64,

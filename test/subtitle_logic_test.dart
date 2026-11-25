@@ -816,4 +816,13 @@ void main() {
       expect(kSecondVoicePitch, greaterThan(0.8));
     });
   });
+  test('barre de langue : « Auto » et la langue du téléphone', () {
+    expect(phoneLanguage('fr-FR').code, 'fr');
+    expect(phoneLanguage('de-AT').code, 'de');
+    expect(phoneLanguage('nb-NO').code, 'no');
+    expect(phoneLanguage('zh-Hans-CN').code, 'zh');
+    expect(phoneLanguage('pt-BR').code, 'pt');
+    // Téléphone dans une langue que VoxLiso ne lit pas : le français.
+    expect(phoneLanguage('ar-EG').code, 'fr');
+  });
 }
