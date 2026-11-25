@@ -66,7 +66,6 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   List<DetectedBox> _boxes = const [];
   String _diag = 'En attente de la première image…';
-  late bool _showDiag = !widget.settings.largeMode;
   bool _textOutsideOnly = false;
 
   double _exposure = 0;
@@ -1705,11 +1704,6 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
               onPressed: _controller == null ? null : _testPhoto,
             ),
           IconButton(
-            tooltip: _showDiag ? 'Masquer le diagnostic' : 'Afficher le diagnostic',
-            icon: Icon(_showDiag ? Icons.bug_report : Icons.bug_report_outlined),
-            onPressed: () => setState(() => _showDiag = !_showDiag),
-          ),
-          IconButton(
             tooltip: 'Réglages',
             icon: const Icon(Icons.tune),
             onPressed: _openSettings,
@@ -1722,7 +1716,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
             child: landscapeUi
             // Paysage : aperçu à gauche, commandes à droite.
             ? Row(children: [
-                Expanded(child: Center(child: _buildPreview())),
+                Expanded(
+                  child: Column(children: [
+                    Expanded(child: Center(child: _buildPreview())),
+                    _buildDiagPanel(),
+                  ]),
+                ),
                 SizedBox(
                   width: 330,
                   child: SingleChildScrollView(
@@ -1740,6 +1739,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
             // Portrait : aperçu en haut, commandes en bas.
             : Column(children: [
                 Expanded(child: Center(child: _buildPreview())),
+                _buildDiagPanel(),
                 if (banner != null) banner,
                 Flexible(
                   child: SingleChildScrollView(
@@ -1978,30 +1978,32 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           }),
           onChangeEnd: () {},
         ),
-        if (_showDiag)
-          Positioned(
-            left: 4,
-            right: 4,
-            top: 4,
-            child: IgnorePointer(
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  _diag,
-                  maxLines: _diag.startsWith('⚠') ? 10 : 4,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 11, height: 1.3),
-                ),
-              ),
-            ),
-          ),
       ]),
     );
   }
+
+  /// Diagnostic, dans un cadre sous l'image (demande du 25/11/2026 : plus de
+  /// bouton, toutes les valeurs visibles sous l'écran). Le texte entier est
+  /// affiché ; au-delà de 120 points de haut, il défile. Ignoré par TalkBack
+  /// et VoiceOver, qui le reliraient à chaque image analysée.
+  Widget _buildDiagPanel() => ExcludeSemantics(
+        child: Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          constraints: const BoxConstraints(maxHeight: 120),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: SingleChildScrollView(
+            child: Text(
+              _diag,
+              style: const TextStyle(color: Colors.white, fontSize: 11, height: 1.3),
+            ),
+          ),
+        ),
+      );
 
   /// Mode « Écran du téléphone » : schéma du téléphone avec la bande à régler.
   Widget _buildScreenPanel() {
@@ -2062,20 +2064,6 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                     }),
                     onChangeEnd: () {},
                   ),
-                  if (_showDiag)
-                    Positioned(
-                      left: 4,
-                      right: 4,
-                      bottom: 4,
-                      child: IgnorePointer(
-                        child: Text(
-                          _diag,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white70, fontSize: 10),
-                        ),
-                      ),
-                    ),
                 ]),
               ),
             ),
