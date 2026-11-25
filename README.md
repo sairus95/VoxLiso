@@ -54,6 +54,7 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 | Mode photo | Analyse de vraies photos au lieu de la vidéo : plus lent, mais plus fiable sur certains téléphones. |
 | Couper la phrase en cours | Passe directement au nouveau sous-titre si la voix est en retard. |
 | Ignorer les descriptions sonores | Ne lit pas `[Musique]`, `(rires)`, `♪`. |
+| Test Netflix, Disney+… | Android, **version de test** (25/11/2026) : Réglages > Accessibilité > « Test : sous-titres de Netflix, Disney+… ». Ces applications sont noires pour la lecture de l'écran (protection anti-copie). Un **service d'accessibilité** (« VoxLiso : sous-titres », à activer dans les réglages d'accessibilité d'Android) relève les textes que les autres applications exposent à l'accessibilité, sans capturer la vidéo, les affiche avec leur position et peut les dire à voix haute. « Copier » met le journal dans le presse-papiers. Sert à savoir si les sous-titres de chaque application y apparaissent. Android 13+ avec l'APK GitHub : autoriser d'abord les « paramètres restreints » (page de l'application, menu ⋮). |
 
 ---
 
@@ -119,6 +120,7 @@ Configuration minimale : Android 7.0 ou plus, iOS 15.5 ou plus.
 | `lib/rate_pacer.dart` | Vitesse automatique : accélération selon le retard de la voix |
 | `lib/languages.dart` | Les 22 langues lues (voix, écriture), les autres langues traduites, et les outils d'écriture (`isCjkRune`, `speechWeight`) |
 | `lib/language_detector.dart` | Détection automatique de la langue (ML Kit Language ID) |
+| `lib/accessibility_test.dart`, `native/android/VoxAccessibilityService.kt` | Test de lecture des sous-titres par l'accessibilité (Netflix, Disney+…) |
 | `lib/voices.dart` | Liste et classement des voix du téléphone, choix du 2e personnage |
 | `lib/translator.dart` | Chaîne de traduction (DeepL → Azure → téléphone → ML Kit) et téléchargement des langues |
 | `lib/phone_translator.dart` | Traducteur du téléphone : Firefox (Bergamot) sur Android, Apple sur iPhone |

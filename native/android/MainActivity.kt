@@ -24,6 +24,7 @@ import io.flutter.plugin.common.MethodChannel
  *  - « voxliso/screen » : start / stop / isRunning
  *  - « voxliso/screen/lines » : lignes de texte lues à l'écran
  *  - « voxliso/system » : moteurs de voix, réglages de synthèse vocale
+ *  - « voxliso/a11y » et « voxliso/a11y/texts » : test de lecture par l'accessibilité
  */
 class MainActivity : FlutterActivity() {
 
@@ -34,6 +35,7 @@ class MainActivity : FlutterActivity() {
 
     private var pendingStart: MethodChannel.Result? = null
     private var sink: EventChannel.EventSink? = null
+    private var a11ySink: EventChannel.EventSink? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -196,6 +198,54 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // Test : textes exposés à l'accessibilité par les autres applications.
+        MethodChannel(messenger, "voxliso/a11y").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "status" -> result.success(
+                    mapOf(
+                        "enabled" to VoxAccessibilityService.isEnabled(this),
+                        "connected" to (VoxAccessibilityService.instance != null),
+                        "scans" to VoxAccessibilityService.scans,
+                        "package" to VoxAccessibilityService.lastPackage,
+                        "sdk" to Build.VERSION.SDK_INT,
+                    )
+                )
+                "log" -> result.success(VoxAccessibilityService.snapshot())
+                "clear" -> {
+                    VoxAccessibilityService.clear()
+                    result.success(true)
+                }
+                "openSettings" -> result.success(
+                    tryStart(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                )
+                // « Paramètres restreints » (Android 13+, APK installé hors boutique) :
+                // menu ⋮ de la page de l'application.
+                "openAppInfo" -> result.success(
+                    tryStart(
+                        Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:$packageName"),
+                        )
+                    )
+                )
+                else -> result.notImplemented()
+            }
+        }
+
+        EventChannel(messenger, "voxliso/a11y/texts").setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    a11ySink = events
+                    VoxAccessibilityService.listener = { entry -> a11ySink?.success(entry) }
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    a11ySink = null
+                    VoxAccessibilityService.listener = null
+                }
+            }
+        )
+
         EventChannel(messenger, "voxliso/screen/lines").setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
@@ -232,6 +282,13 @@ class MainActivity : FlutterActivity() {
         } else {
             result?.success(false)
         }
+    }
+
+    private fun tryStart(intent: Intent): Boolean = try {
+        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    } catch (_: Exception) {
+        false
     }
 
     private fun downloads() = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
