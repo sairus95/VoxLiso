@@ -25,7 +25,7 @@ Caméra (≈3 images/s) ──► Reconnaissance du texte ──► Zone des sou
 - **Mode grands boutons** (Réglages > Accessibilité) : textes et boutons agrandis, bouton « Répéter », boutons Monter / Descendre / Agrandir / Réduire pour placer la zone sans glisser (affichés aussi avec TalkBack ou VoiceOver), annonces vocales et vibration à chaque sous-titre.
 - **Écran du téléphone** (Android) : lit les sous-titres des vidéos regardées sur le téléphone lui-même (YouTube, navigateur, vos vidéos), sans caméra. Appuyez sur « Lire », autorisez la capture de l'écran, puis ouvrez la vidéo ; pour arrêter, notification VoxLiso > Arrêter. **Netflix, Disney+ et Prime Video protègent leur écran : leurs sous-titres ne peuvent pas être lus.** Pas disponible sur iPhone.
 - **Tester sur une photo** (icône de scanner en haut) : prend une photo et affiche tout le texte trouvé. Pratique pour vérifier que la caméra lit bien.
-- Le **diagnostic** s'affiche en permanence dans un cadre sous l'image (depuis le 25/11/2026, plus de bouton 🐞) : version, format d'image, nombre de lignes trouvées, lecture renforcée, sous-titres non dits, texte lu. Il défile s'il est long.
+- Le **diagnostic** s'affiche en permanence dans un cadre sous l'image, sur le fond de l'application (depuis le 25/11/2026, plus de bouton 🐞) : version, format d'image, nombre de lignes trouvées, lecture renforcée, sous-titres non dits, texte lu. En portrait, il est en tête des commandes et défile avec elles ; l'aperçu prend juste la hauteur de l'image.
 
 ### Réglages disponibles
 | Réglage | Effet |

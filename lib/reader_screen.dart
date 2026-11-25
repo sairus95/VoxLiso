@@ -1754,7 +1754,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                 Expanded(
                   child: Column(children: [
                     Expanded(child: Center(child: _buildPreview())),
-                    _buildDiagPanel(),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+                      child: _buildDiagPanel(capped: true),
+                    ),
                   ]),
                 ),
                 SizedBox(
@@ -1772,20 +1775,32 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
                 ),
               ])
             // Portrait : aperçu en haut, commandes en bas.
-            : Column(children: [
-                Expanded(child: Center(child: _buildPreview())),
-                _buildDiagPanel(),
-                if (banner != null) banner,
-                Flexible(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: _buildControls(theme),
+            // L'aperçu prend la hauteur de l'image (au plus 60 % de l'écran),
+            // sans bandes vides : il reste plus de place pour les commandes.
+            // Le diagnostic est en tête des commandes et défile avec elles
+            // (avant, fixe, il semblait recouvrir le dernier texte lu).
+            : LayoutBuilder(
+                builder: (context, box) => Column(children: [
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: box.maxHeight * 0.6),
+                    child: Center(heightFactor: 1, child: _buildPreview()),
+                  ),
+                  if (banner != null) banner,
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildDiagPanel(),
+                          const SizedBox(height: 8),
+                          ..._buildControls(theme),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ]),
+                ]),
+              ),
           ),
         ]),
       ),
@@ -2017,28 +2032,35 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
   }
 
-  /// Diagnostic, dans un cadre sous l'image (demande du 25/11/2026 : plus de
-  /// bouton, toutes les valeurs visibles sous l'écran). Le texte entier est
-  /// affiché ; au-delà de 120 points de haut, il défile. Ignoré par TalkBack
-  /// et VoiceOver, qui le reliraient à chaque image analysée.
-  Widget _buildDiagPanel() => ExcludeSemantics(
-        child: Container(
-          width: double.infinity,
-          margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          constraints: const BoxConstraints(maxHeight: 120),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: SingleChildScrollView(
-            child: Text(
-              _diag,
-              style: const TextStyle(color: Colors.white, fontSize: 11, height: 1.3),
-            ),
-          ),
+  /// Diagnostic, dans un cadre sous l'image (demandes du 25/11/2026 : plus de
+  /// bouton, toutes les valeurs sous l'écran, fond de la couleur de
+  /// l'application et non noir). Texte entier ; [capped] (paysage, colonne
+  /// fixe) : 120 points de haut au plus, puis il défile. Ignoré par TalkBack et
+  /// VoiceOver, qui le reliraient à chaque image analysée.
+  Widget _buildDiagPanel({bool capped = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Text(
+      _diag,
+      style: TextStyle(
+        color: scheme.onSurface.withValues(alpha: 0.75),
+        fontSize: 11,
+        height: 1.3,
+      ),
+    );
+    return ExcludeSemantics(
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        constraints: capped ? const BoxConstraints(maxHeight: 120) : null,
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          border: Border.all(color: scheme.outlineVariant),
+          borderRadius: BorderRadius.circular(8),
         ),
-      );
+        child: capped ? SingleChildScrollView(child: text) : text,
+      ),
+    );
+  }
 
   /// Mode « Écran du téléphone » : schéma du téléphone avec la bande à régler.
   Widget _buildScreenPanel() {
