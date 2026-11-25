@@ -891,8 +891,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
           title: const Text('Corriger les erreurs de lecture'),
           subtitle: const Text(
               'Les mots mal lus sont corrigés avec un dictionnaire de la langue avant d\'être '
-              'dits (« corne » -> « come », « ecole » -> « école »). Listes de mots : '
-              'FrequencyWords (Hermit Dave), corpus OpenSubtitles, licence CC BY-SA 4.0.'),
+              'dits. Listes de mots : FrequencyWords (Hermit Dave), corpus OpenSubtitles, '
+              'licence CC BY-SA 4.0.'),
           value: s.spellFix,
           onChanged: (v) => setState(() => s.spellFix = v),
         ),
