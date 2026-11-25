@@ -235,29 +235,35 @@ class _SettingsSheetState extends State<SettingsSheet> {
       Text('Langues des sous-titres', style: theme.textTheme.titleMedium),
       const SizedBox(height: 4),
       Text(
-        kTranslationEnabled
-            ? 'Cochez les langues à entendre telles quelles : elles apparaissent dans la barre de '
-                'langue. En mode Auto, un sous-titre dans une autre langue est traduit '
-                '(voir « Traduction »).'
-            : 'Cochez les langues qui apparaissent dans la barre de langue. Chaque sous-titre '
-                'est lu tel quel, dans sa langue, avec la voix du téléphone pour cette langue.',
+        'Sur l\'écran principal, « Auto » reconnaît la langue de chaque sous-titre et le lit '
+        'dans sa langue ; l\'autre bouton lit tout dans la langue du téléphone (celle des '
+        'réglages d\'Android ou de l\'iPhone).',
         style: theme.textTheme.bodySmall,
       ),
-      const SizedBox(height: 8),
-      Wrap(spacing: 6, runSpacing: 4, children: [
-        for (final l in kLanguages)
-          FilterChip(
-            label: Text(l.label),
-            selected: read.contains(l.code),
-            onSelected: (on) => setState(() {
-              final next = [
-                for (final x in kLanguages)
-                  if (x.code == l.code ? on : read.contains(x.code)) x.code,
-              ];
-              if (next.isNotEmpty) s.readLanguages = next; // au moins une langue
-            }),
-          ),
-      ]),
+      // Langues lues telles quelles : utile seulement avec la traduction.
+      if (kTranslationEnabled) ...[
+        const SizedBox(height: 8),
+        Text(
+          'Cochez les langues à entendre telles quelles. En mode Auto, un sous-titre dans une '
+          'autre langue est traduit (voir « Traduction »).',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        Wrap(spacing: 6, runSpacing: 4, children: [
+          for (final l in kLanguages)
+            FilterChip(
+              label: Text(l.label),
+              selected: read.contains(l.code),
+              onSelected: (on) => setState(() {
+                final next = [
+                  for (final x in kLanguages)
+                    if (x.code == l.code ? on : read.contains(x.code)) x.code,
+                ];
+                if (next.isNotEmpty) s.readLanguages = next; // au moins une langue
+              }),
+            ),
+        ]),
+      ],
       const SizedBox(height: 12),
       DropdownButtonFormField<SubtitleScript>(
         key: ValueKey('script-${script.name}'),
@@ -280,9 +286,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
       ),
       const SizedBox(height: 4),
       Text(
-        'Choisie toute seule quand vous touchez une langue dans la barre. Les écritures '
-        'chinoise, japonaise et coréenne lisent aussi l\'alphabet latin ; utile en mode Auto '
-        'pour des sous-titres en chinois, japonais ou coréen.',
+        'Choisie toute seule si le téléphone est en chinois, japonais ou coréen. Ces '
+        'écritures lisent aussi l\'alphabet latin : choisissez-en une ici pour des '
+        'sous-titres en chinois, japonais ou coréen en mode Auto.',
         style: theme.textTheme.bodySmall,
       ),
     ];

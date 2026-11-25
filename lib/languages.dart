@@ -243,6 +243,12 @@ const Map<String, String> kOtherLanguages = {
 String languageName(String code) =>
     supportedLanguage(code)?.label ?? kOtherLanguages[code] ?? code.toUpperCase();
 
+/// Langue du téléphone (réglée dans Android ou iOS, ex. « fr-FR ») parmi
+/// celles que VoxLiso lit ; le français si le téléphone est dans une autre
+/// langue. C'est le 2e bouton de la barre de langue, à côté de « Auto ».
+SubtitleLanguage phoneLanguage(String systemTag) =>
+    supportedLanguage(systemTag) ?? languageFor('fr');
+
 /// Langue qu'une voix sait lire (elle a une entrée dans [kLanguages]) ?
 bool isReadLanguage(String code) => supportedLanguage(code) != null;
 

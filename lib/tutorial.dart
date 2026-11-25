@@ -1,7 +1,9 @@
 import 'dart:io' show Platform;
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 
+import 'languages.dart';
 import 'logo.dart';
 import 'settings.dart';
 
@@ -54,8 +56,9 @@ class _TutorialScreenState extends State<TutorialScreen> {
     ),
     const _Page(
       '3. La langue',
-      'Laissez « Auto » : VoxLiso reconnaît la langue de chaque sous-titre. Dans les '
-          'réglages (⚙) : choix des voix et une voix par personnage.',
+      'Laissez « Auto » : VoxLiso reconnaît la langue de chaque sous-titre. L\'autre '
+          'bouton lit tout dans la langue de votre téléphone. Dans les réglages (⚙) : '
+          'choix des voix et une voix par personnage.',
       _Picture.language,
     ),
     const _Page(
@@ -352,11 +355,15 @@ class _TutorialPainter extends CustomPainter {
               ..color = Colors.white
               ..strokeWidth = s * 0.01);
       case _Picture.language:
-        const labels = ['Auto', 'FR', 'DE', 'ES', 'IT', 'EN', 'PT'];
-        final w = s * 0.125;
+        // « Auto » et la langue du téléphone, comme sur l'écran principal.
+        final labels = [
+          'Auto',
+          phoneLanguage(PlatformDispatcher.instance.locale.toLanguageTag()).label,
+        ];
+        final w = s * 0.38;
         for (var i = 0; i < labels.length; i++) {
           final rect = Rect.fromCenter(
-              center: Offset(c.dx + (i - 3) * (w + s * 0.012), c.dy),
+              center: Offset(c.dx + (i - (labels.length - 1) / 2) * (w + s * 0.012), c.dy),
               width: w,
               height: s * 0.14);
           final rr = RRect.fromRectAndRadius(rect, Radius.circular(s * 0.04));
