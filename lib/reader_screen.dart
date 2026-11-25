@@ -23,6 +23,7 @@ import 'sentence_joiner.dart';
 import 'settings.dart';
 import 'settings_sheet.dart';
 import 'speech_service.dart';
+import 'speech_text.dart';
 import 'spell_fixer.dart';
 import 'static_filter.dart';
 import 'subtitle_locator.dart';
@@ -959,8 +960,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final second = s.voice2For(lang) ?? _catalog.secondVoice(lang, first);
     final chosenPitch = s.pitch2For(lang);
     if (second == null || second.key == first?.key) {
-      // Même voix que le 1er personnage : plus grave pour les distinguer.
-      return (voice: first, pitch: chosenPitch ?? _pitchFor(lang) * 0.8);
+      // Même voix que le 1er personnage : un peu plus grave pour les distinguer
+      // (×0,88 ; ×0,8 avant, qui sonnait trop artificiel).
+      return (voice: first, pitch: chosenPitch ?? _pitchFor(lang) * kSecondVoicePitch);
     }
     return (voice: second, pitch: chosenPitch ?? 1.0);
   }
@@ -1086,7 +1088,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _speech.sayAll([
       for (var i = 0; i < out.length; i++)
         Utterance(
-          out[i],
+          // Texte préparé pour la voix (majuscules, nom du personnage…) ;
+          // l'historique garde le texte lu à l'écran.
+          speakableText(out[i], lang: speakLang),
           locale: locale,
           voice: (firstIndex + i).isOdd ? second.voice : first,
           pitch: (firstIndex + i).isOdd ? second.pitch : _pitchFor(speakLang),
@@ -1411,7 +1415,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// Redit une phrase (historique ou bouton « Répéter »).
   void _replay(HistoryEntry e) {
     _speech.say(
-      e.text,
+      speakableText(e.text, lang: e.lang),
       locale: isReadLanguage(e.lang) ? languageFor(e.lang).ttsLocale : e.lang,
       voice: _primaryVoice(e.lang),
       pitch: _pitchFor(e.lang),

@@ -2,6 +2,10 @@ import 'dart:convert';
 
 import 'languages.dart';
 
+/// Hauteur du 2e personnage quand il a la même voix que le 1er
+/// (×0,8 avant la v1.0.68 : trop grave, l'effet s'entendait).
+const double kSecondVoicePitch = 0.88;
+
 /// Une voix de synthèse installée sur le téléphone.
 class TtsVoice {
   TtsVoice({
@@ -118,6 +122,28 @@ class TtsVoice {
   /// Utilisable sans internet et déjà installée.
   bool get usableOffline => !networkRequired && !notInstalled;
 
+  /// Voix robotique ou à effet, à ne jamais choisir automatiquement :
+  /// - iPhone : voix « Eloquence » (Eddy, Flo, Grandma, Grandpa, Reed, Rocko,
+  ///   Sandy, Shelley, dans presque toutes les langues depuis iOS 16) et voix
+  ///   « à effet » de macOS (Albert, Bad News, Bells, Bubbles, Zarvox…). Rangées
+  ///   par ordre alphabétique, elles passaient avant Thomas (fr-FR) ou
+  ///   Samantha (en-US) à qualité égale.
+  /// - Android : ancien moteur Pico et voix « eSpeak ».
+  bool get robotic {
+    final id = identifier.toLowerCase();
+    if (id.contains('eloquence') || id.contains('speech.synthesis.voice')) return true;
+    final n = name.toLowerCase();
+    if (identifier.isNotEmpty && _noveltyVoices.contains(n)) return true;
+    return n.contains('pico') || n.contains('espeak');
+  }
+
+  static const Set<String> _noveltyVoices = {
+    'albert', 'bad news', 'bahh', 'bells', 'boing', 'bubbles', 'cellos', 'good news',
+    'jester', 'organ', 'superstar', 'trinoids', 'whisper', 'wobble', 'zarvox',
+    'fred', 'junior', 'kathy', 'ralph', 'eddy', 'flo', 'grandma', 'grandpa', 'reed',
+    'rocko', 'sandy', 'shelley',
+  };
+
   String get genderLabel => switch (gender) {
         'female' => 'Femme',
         'male' => 'Homme',
@@ -150,7 +176,8 @@ class VoiceCatalog {
     _all = list;
   }
 
-  /// Voix d'une langue : installées hors ligne d'abord, puis l'accent principal
+  /// Voix d'une langue : installées hors ligne d'abord, puis les voix
+  /// naturelles avant les voix robotiques, puis l'accent principal
   /// (fr-FR, de-DE, es-ES, it-IT) avant les autres régions, puis par qualité.
   List<TtsVoice> voicesFor(String lang) {
     final main = languageFor(lang).ttsLocale.toLowerCase();
@@ -158,6 +185,7 @@ class VoiceCatalog {
     final list = _all.where((v) => v.lang == lang).toList();
     list.sort((a, b) {
       if (a.usableOffline != b.usableOffline) return a.usableOffline ? -1 : 1;
+      if (a.robotic != b.robotic) return a.robotic ? 1 : -1;
       if (isMain(a) != isMain(b)) return isMain(a) ? -1 : 1;
       final q = b.qualityRank.compareTo(a.qualityRank);
       if (q != 0) return q;
@@ -185,6 +213,7 @@ class VoiceCatalog {
         technical ? 'Voix $n' : v.name,
         if (v.genderLabel.isNotEmpty) v.genderLabel,
         if (v.qualityLabel.isNotEmpty) v.qualityLabel,
+        if (v.robotic) 'robotique',
         v.locale,
         if (v.networkRequired) 'internet',
         if (v.notInstalled) 'à télécharger',
@@ -205,9 +234,11 @@ class VoiceCatalog {
   /// Une autre voix que [other] pour la même langue (2e personnage) :
   /// de genre opposé si le téléphone l'indique, sinon la suivante.
   TtsVoice? secondVoice(String lang, TtsVoice? other) {
-    final candidates = voicesFor(lang)
+    var candidates = voicesFor(lang)
         .where((v) => v.usableOffline && v.key != other?.key)
         .toList();
+    // Jamais une voix robotique : la même voix, un peu plus grave, est plus agréable.
+    candidates = candidates.where((v) => !v.robotic).toList();
     if (candidates.isEmpty) return null;
     if (other != null && other.gender.isNotEmpty) {
       for (final v in candidates) {

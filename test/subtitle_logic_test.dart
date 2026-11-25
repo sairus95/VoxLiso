@@ -8,6 +8,7 @@ import 'package:voxliso/rate_pacer.dart';
 import 'package:voxliso/reading_vote.dart';
 import 'package:voxliso/sentence_joiner.dart';
 import 'package:voxliso/speech_service.dart';
+import 'package:voxliso/speech_text.dart';
 import 'package:voxliso/spell_fixer.dart';
 import 'package:voxliso/static_filter.dart';
 import 'package:voxliso/subtitle_locator.dart';
@@ -760,5 +761,59 @@ void main() {
   });
   test('traduction désactivée par défaut (lecture des sous-titres tels quels)', () {
     expect(kTranslationEnabled, isFalse);
+  });
+
+  group('Voix plus naturelle', () {
+    test('sous-titre en majuscules remis en minuscules', () {
+      expect(speakableText('TU VIENS ? NON, PAS CE SOIR.'), 'Tu viens ? Non, pas ce soir.');
+      expect(speakableText("C'EST LE FBI ! OK."), "C'est le FBI ! OK.");
+      expect(speakableText("I DON'T KNOW, I'M TIRED.", lang: 'en'), "I don't know, I'm tired.");
+      expect(speakableText('ISTANBUL', lang: 'tr'), 'Istanbul');
+    });
+
+    test('texte normal et sigle isolé inchangés', () {
+      expect(speakableText('Il travaille à la SNCF.'), 'Il travaille à la SNCF.');
+      expect(speakableText('OK.'), 'OK.');
+      expect(speakableText('NON'), 'NON');
+    });
+
+    test('nom du personnage retiré', () {
+      expect(speakableText('JEAN : Tu viens ?'), 'Tu viens ?');
+      expect(speakableText('MARIE-CLAIRE: Bonjour.'), 'Bonjour.');
+      expect(speakableText('JOHN SMITH: Hello there.'), 'Hello there.');
+      expect(speakableText('ATTENTION : la porte.'), 'ATTENTION : la porte.');
+      expect(speakableText('OK : on y va.'), 'OK : on y va.');
+    });
+
+    test('ponctuation adaptée à la voix', () {
+      expect(speakableText('...et puis il est parti.'), 'et puis il est parti.');
+      expect(speakableText('Je...je ne sais pas...'), 'Je… je ne sais pas…');
+      expect(speakableText('Quoi ?!! Non !!!'), 'Quoi ?! Non !');
+      expect(speakableText('Il a dit « demain ».'), 'Il a dit demain.');
+      expect(speakableText('UN HOMME EST LÀ.'), 'Un homme est là.');
+      expect(speakableText('Oui - enfin, non.'), 'Oui, enfin, non.');
+      expect(speakableText('...'), '...');
+    });
+
+    test('voix robotiques jamais choisies automatiquement', () {
+      final c = VoiceCatalog()
+        ..load([
+          {'name': 'Eddy', 'locale': 'fr-FR', 'quality': 'default', 'gender': 'male',
+            'identifier': 'com.apple.eloquence.fr-FR.Eddy'},
+          {'name': 'Albert', 'locale': 'en-US', 'quality': 'default', 'gender': 'male',
+            'identifier': 'com.apple.speech.synthesis.voice.Albert'},
+          {'name': 'Samantha', 'locale': 'en-US', 'quality': 'default', 'gender': 'female',
+            'identifier': 'com.apple.voice.compact.en-US.Samantha'},
+          {'name': 'Thomas', 'locale': 'fr-FR', 'quality': 'default', 'gender': 'male',
+            'identifier': 'com.apple.voice.compact.fr-FR.Thomas'},
+        ]);
+      expect(c.best('fr')!.name, 'Thomas');
+      expect(c.best('en')!.name, 'Samantha');
+      // 2e personnage : pas Eddy ni Albert, la même voix sera prise (plus grave).
+      expect(c.secondVoice('fr', c.best('fr')), isNull);
+      expect(c.secondVoice('en', c.best('en')), isNull);
+      expect(c.labelsFor('fr')['Eddy|fr-FR'], contains('robotique'));
+      expect(kSecondVoicePitch, greaterThan(0.8));
+    });
   });
 }
