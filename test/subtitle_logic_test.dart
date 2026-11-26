@@ -338,7 +338,7 @@ void main() {
       expect(SpellFixer.fix("S'il te plaît", fr2, lang: 'fr'), "S'il te plaît");
       // Seulement devant « te / vous plaît », et seulement en français.
       expect(SpellFixer.fix('Sh, il est là.', fr2, lang: 'fr'), 'Sh, il est là.');
-      expect(SpellFixer.fix('SHte plaí', fr2, lang: 'de'), 'SHte plaí');
+      expect(SpellFixer.fix('SHte plaí', fr2, lang: 'de'), 'SHte plaît'); // « SH » laissé
     });
 
     test('deux mots collés, accent faux : « sigentimènt » -> « si gentiment »', () {
