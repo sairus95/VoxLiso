@@ -249,6 +249,15 @@ class AppSettings {
   bool get aimBeeps => _prefs.getBool('aimBeeps') ?? largeMode;
   set aimBeeps(bool v) => _prefs.setBool('aimBeeps', v);
 
+  /// Voix seulement dans les écouteurs (Bluetooth, filaires…) : sans eux, la
+  /// voix reste coupée, pour ne pas gêner les autres.
+  bool get headphonesOnly => _prefs.getBool('headphonesOnly') ?? false;
+  set headphonesOnly(bool v) => _prefs.setBool('headphonesOnly', v);
+
+  /// Profils de zone (JSON, voir zone_profiles.dart).
+  String get zoneProfilesJson => _prefs.getString('zoneProfiles') ?? '[]';
+  set zoneProfilesJson(String v) => _prefs.setString('zoneProfiles', v);
+
   bool get spellFix => _prefs.getBool('spellFix') ?? true;
   set spellFix(bool v) => _prefs.setBool('spellFix', v);
 

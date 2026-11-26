@@ -169,9 +169,13 @@ class SpeechService {
   void say(String text, {String? locale, TtsVoice? voice, double pitch = 1.0}) =>
       sayAll([Utterance(text, locale: locale, voice: voice, pitch: pitch)]);
 
+  /// Voix coupée (réglage « Voix seulement dans les écouteurs », écouteurs
+  /// débranchés) : rien n'est dit, le texte reste dans l'historique.
+  bool muted = false;
+
   /// Dit plusieurs phrases à la suite (ex. les répliques d'un dialogue).
   void sayAll(List<Utterance> items) {
-    if (items.isEmpty) return;
+    if (items.isEmpty || muted) return;
     final batch = ++_batch;
     final entries = [for (final u in items) (u: u, batch: batch)];
     if (interrupt) {

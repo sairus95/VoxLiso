@@ -17,6 +17,44 @@ class TtsEngine {
 class SystemBridge {
   static const MethodChannel _channel = MethodChannel('voxliso/system');
 
+  /// Appels du téléphone vers VoxLiso : boutons de la notification de lecture
+  /// (« pause », « resume », « stop ») et écouteurs branchés ou débranchés.
+  static void listen({
+    required void Function(String action) onReadingAction,
+    required void Function(bool connected) onHeadphones,
+  }) {
+    if (!Platform.isAndroid) return;
+    _channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'readingAction':
+          onReadingAction('${call.arguments}');
+        case 'headphonesChanged':
+          onHeadphones(call.arguments == true);
+      }
+      return null;
+    });
+  }
+
+  /// État de la lecture pour la notification : « reading », « paused », « off ».
+  /// [screen] : mode écran du téléphone (notification du service de capture).
+  static Future<void> setReadingState(String state, {required bool screen}) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod<bool>('setReadingState', {'state': state, 'screen': screen});
+    } catch (_) {}
+  }
+
+  /// Écouteurs (Bluetooth, filaires, USB, appareil auditif) branchés ?
+  /// Toujours vrai ailleurs que sur Android (pas de vérification).
+  static Future<bool> headphonesConnected() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await _channel.invokeMethod<bool>('headphones') ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   static Future<List<TtsEngine>> ttsEngines() async {
     if (!Platform.isAndroid) return const [];
     try {

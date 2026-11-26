@@ -1014,6 +1014,17 @@ class _SettingsSheetState extends State<SettingsSheet> {
           value: s.photoMode,
           onChanged: (v) => setState(() => s.photoMode = v),
         ),
+        if (Platform.isAndroid)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Voix seulement dans les écouteurs'),
+            subtitle: const Text(
+                'Sans écouteurs (Bluetooth ou à fil) connectés, la voix reste coupée, pour ne '
+                'pas gêner les autres. S\'ils se déconnectent pendant le film, la voix '
+                's\'arrête aussitôt au lieu de passer sur le haut-parleur.'),
+            value: s.headphonesOnly,
+            onChanged: (v) => setState(() => s.headphonesOnly = v),
+          ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Couper la phrase en cours'),

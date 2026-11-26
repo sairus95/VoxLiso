@@ -32,6 +32,7 @@ import 'subtitle_tracker.dart';
 import 'system_bridge.dart';
 import 'text_tools.dart';
 import 'translator.dart';
+import 'zone_profiles.dart';
 import 'updater.dart';
 import 'tutorial.dart';
 import 'version.dart';
@@ -64,6 +65,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   bool _closed = false;
   bool _busy = false;
   bool _reading = false;
+
+  /// Lecture en pause (bouton « Pause » de la notification ou de l'écran).
+  bool _paused = false;
+
+  /// Écouteurs connectés (réglage « Voix seulement dans les écouteurs »).
+  bool _headphones = true;
   int _photoLoopId = 0;
   DateTime _lastFrame = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -152,6 +159,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    SystemBridge.listen(onReadingAction: _onReadingAction, onHeadphones: _onHeadphones);
+    SystemBridge.headphonesConnected().then((v) {
+      _headphones = v;
+      _applyMute();
+    });
     _tracker = SubtitleTracker(stableFrames: s.stableFrames)
       // Dictionnaire de la langue lue : départage les lectures (« raisori » / « raison »).
       ..dictionary = () {
@@ -398,7 +410,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (state != AppLifecycleState.resumed) _undim();
     // Mode écran : la lecture continue pendant que l'on regarde la vidéo.
     if (s.screenSource) return;
-    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+    // Pas sur « inactive » : le volet des notifications (bouton Pause) ou une
+    // fenêtre du système rendent l'application inactive sans la cacher.
+    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused) {
       if (_controller != null) {
         _stopReading();
         _releaseCamera();
@@ -411,7 +425,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   // ------------------------------------------------------- analyse d'image
 
   void _onFrame(CameraImage image) {
-    if (_busy || _closed) return;
+    if (_busy || _closed || (_reading && _paused)) return;
     final now = DateTime.now();
     if (now.difference(_lastFrame) < s.frameInterval) return;
     _lastFrame = now;
@@ -476,7 +490,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// Bip de cadrage avant la lecture (réglage « Bips pour cadrer la télé ») :
   /// texte dans la zone jaune -> bip, d'autant plus aigu qu'il est lisible.
   void _aimBeep(({List<TextLine> all, List<TextLine> inZone, bool fromMirror}) found) {
-    if (!s.aimBeeps || s.screenSource || found.fromMirror) return;
+    if (!s.aimBeeps || s.screenSource || found.fromMirror || _speech.muted) return;
     final hz = aimBeepHz(
       found.inZone.length,
       readabilityFromConfidence([
@@ -747,7 +761,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       : (s.screenTop, s.screenBottom);
 
   void _onScreenFrame(ScreenFrame f) {
-    if (!s.screenSource || _closed) return;
+    if (!s.screenSource || _closed || (_reading && _paused)) return;
     if (_locator != null) {
       _locScreenLandscape = f.landscape;
       _locator!.add([for (final l in f.lines) SeenLine(l.text, l.rect)]);
@@ -1553,7 +1567,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         ));
         return;
       }
-      setState(() => _reading = true);
+      setState(() {
+        _reading = true;
+        _paused = false;
+      });
+      SystemBridge.setReadingState('reading', screen: true);
+      _warnNoHeadphones();
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         duration: Duration(seconds: 6),
         content: Text('Ouvrez maintenant votre vidéo (YouTube, navigateur…) avec les '
@@ -1562,7 +1581,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _announce('Lecture démarrée. Ouvrez maintenant votre vidéo.');
     } else {
       WakelockPlus.enable();
-      setState(() => _reading = true);
+      setState(() {
+        _reading = true;
+        _paused = false;
+      });
+      SystemBridge.setReadingState('reading', screen: false);
+      _warnNoHeadphones();
       _announce('Lecture démarrée');
       _scheduleDim();
     }
@@ -1577,10 +1601,208 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _undim();
     _heldTimer?.cancel();
     _held = null;
-    if (mounted && !_closed) setState(() => _reading = false);
+    if (mounted && !_closed) {
+      setState(() {
+        _reading = false;
+        _paused = false;
+      });
+    } else {
+      _paused = false;
+    }
+    SystemBridge.setReadingState('off', screen: s.screenSource);
     _speech.stop();
     WakelockPlus.disable();
     if (s.screenSource) await _screen.stop();
+  }
+
+  // ------------------------------------------- pause, écouteurs, profils
+
+  void _onReadingAction(String action) {
+    switch (action) {
+      case 'pause':
+        _pause();
+      case 'resume':
+        _resume();
+      case 'stop':
+        if (_reading) {
+          _stopReadingAsync();
+          _announce('Lecture arrêtée');
+        }
+    }
+  }
+
+  /// Pause : plus d'analyse ni de voix, mais la caméra ou la capture de
+  /// l'écran restent prêtes (pas de nouvelle autorisation à la reprise).
+  void _pause() {
+    if (!_reading || _paused) return;
+    setState(() => _paused = true);
+    _speech.stop();
+    _tracker.reset();
+    _heldTimer?.cancel();
+    _held = null;
+    _undim();
+    SystemBridge.setReadingState('paused', screen: s.screenSource);
+    _announce('Lecture en pause');
+  }
+
+  void _resume() {
+    if (!_reading || !_paused) return;
+    setState(() => _paused = false);
+    _tracker.reset();
+    SystemBridge.setReadingState('reading', screen: s.screenSource);
+    _announce('Lecture reprise');
+    if (!s.screenSource) _scheduleDim();
+  }
+
+  void _applyMute() {
+    _speech.muted = s.headphonesOnly && !_headphones;
+  }
+
+  void _onHeadphones(bool connected) {
+    if (!mounted || _closed) return;
+    final wasMuted = _speech.muted;
+    setState(() => _headphones = connected);
+    _applyMute();
+    if (!s.headphonesOnly) return;
+    if (!wasMuted && _speech.muted) {
+      _speech.stop();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Écouteurs déconnectés : voix coupée jusqu\'à leur retour.'),
+      ));
+    } else if (wasMuted && !_speech.muted && _reading) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Écouteurs connectés : la voix reprend.'),
+      ));
+    }
+  }
+
+  void _warnNoHeadphones() {
+    if (!s.headphonesOnly || _headphones || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      duration: Duration(seconds: 6),
+      content: Text('Aucun écouteur connecté : la voix restera coupée jusqu\'à ce que vous '
+          'les connectiez (réglage « Voix seulement dans les écouteurs »).'),
+    ));
+  }
+
+  List<ZoneProfile> get _profiles => decodeProfiles(s.zoneProfilesJson);
+
+  bool _isCurrent(ZoneProfile p) => p.matches(
+        top: _roiTop,
+        bottom: _roiBottom,
+        left: s.roiLeft,
+        right: s.roiRight,
+        zoom: _zoom,
+        exposure: _exposure,
+      );
+
+  /// Profils de zone : une puce par profil (un toucher = zone, zoom et
+  /// luminosité retrouvés ; appui long = supprimer), et « Enregistrer ».
+  Widget _buildProfiles() {
+    final profiles = _profiles;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      alignment: WrapAlignment.center,
+      children: [
+        for (final p in profiles)
+          GestureDetector(
+            onLongPress: () => _deleteProfile(p),
+            child: Tooltip(
+              message: 'Toucher : retrouver la zone, le zoom et la luminosité. '
+                  'Appui long : supprimer.',
+              child: ChoiceChip(
+                avatar: const Icon(Icons.bookmark_outline, size: 18),
+                label: Text(p.name),
+                selected: _isCurrent(p),
+                showCheckmark: false,
+                onSelected: (_) => _applyProfile(p),
+              ),
+            ),
+          ),
+        ActionChip(
+          avatar: const Icon(Icons.bookmark_add_outlined, size: 18),
+          label: Text(profiles.isEmpty ? 'Enregistrer cette zone' : 'Enregistrer'),
+          onPressed: _saveProfile,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _applyProfile(ZoneProfile p) async {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _setRoi(p.top, p.bottom);
+      s.roiLeft = p.left;
+      s.roiRight = p.right;
+    });
+    _tracker.reset();
+    if (_maxZoom > _minZoom) await _setZoom(p.zoom.clamp(_minZoom, _maxZoom).toDouble());
+    if (_maxExposure > _minExposure) {
+      await _setExposure(p.exposure.clamp(_minExposure, _maxExposure).toDouble());
+    }
+    _announce('Profil ${p.name}');
+  }
+
+  Future<void> _saveProfile() async {
+    final suggestions = ['Télé du salon', 'Ordinateur', 'Télé de la chambre'];
+    final existing = {for (final p in _profiles) p.name.toLowerCase()};
+    final controller = TextEditingController(
+      text: suggestions.firstWhere((x) => !existing.contains(x.toLowerCase()), orElse: () => ''),
+    );
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enregistrer cette zone'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('La zone jaune, le zoom et la luminosité seront retrouvés d\'un toucher.'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Nom', hintText: 'Ex. : Télé du salon'),
+            onSubmitted: (v) => Navigator.of(context).pop(v),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    final n = name?.trim() ?? '';
+    if (n.isEmpty || !mounted) return;
+    final p = ZoneProfile(
+      name: n,
+      top: _roiTop,
+      bottom: _roiBottom,
+      left: s.roiLeft,
+      right: s.roiRight,
+      zoom: _zoom,
+      exposure: _exposure,
+    );
+    setState(() => s.zoneProfilesJson = encodeProfiles(upsertProfile(_profiles, p)));
+    _announce('Profil $n enregistré');
+  }
+
+  Future<void> _deleteProfile(ZoneProfile p) async {
+    HapticFeedback.mediumImpact();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Supprimer « ${p.name} » ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Supprimer')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => s.zoneProfilesJson = encodeProfiles(removeProfile(_profiles, p.name)));
   }
 
   Future<void> _setLanguage(String code) async {
@@ -1680,6 +1902,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
     _speech.interrupt = s.interrupt;
     _speech.autoRate = s.autoRate;
+    _applyMute(); // « Voix seulement dans les écouteurs » changé
     _applyScript(); // écriture des sous-titres changée dans les réglages
     _scheduleDim(); // écran noir activé ou désactivé dans les réglages
     _tracker.stableFrames = s.stableFrames;
@@ -1865,6 +2088,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       ],
       const SizedBox(height: 8),
       _buildLocateButton(),
+      if (!s.screenSource && _controller != null) ...[
+        const SizedBox(height: 8),
+        _buildProfiles(),
+      ],
       if (!s.screenSource && _maxZoom > _minZoom) _buildZoom(),
       if (!s.screenSource && _maxExposure > _minExposure) _buildExposure(),
       if (a11y) ...[
@@ -1913,6 +2140,26 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           label: Text(_reading ? 'Arrêter la lecture' : 'Lire les sous-titres'),
         ),
       ),
+      // Pause / reprise (aussi dans la notification).
+      if (_reading) ...[
+        const SizedBox(height: 8),
+        SizedBox(
+          height: large ? 64 : 48,
+          child: OutlinedButton.icon(
+            onPressed: _paused ? _resume : _pause,
+            icon: Icon(_paused ? Icons.play_arrow : Icons.pause, size: large ? 32 : 24),
+            label: Text(_paused ? 'Reprendre' : 'Pause'),
+          ),
+        ),
+      ],
+      if (s.headphonesOnly && !_headphones) ...[
+        const SizedBox(height: 8),
+        Text(
+          'Voix coupée : aucun écouteur connecté (réglage « Voix seulement dans les écouteurs »).',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+        ),
+      ],
     ];
     if (!large) return controls;
     // Mode grands boutons : textes agrandis dans le panneau de commandes.

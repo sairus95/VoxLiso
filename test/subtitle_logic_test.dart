@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voxliso/history.dart';
 import 'package:voxliso/language_detector.dart';
 import 'package:voxliso/aim_beep.dart';
+import 'package:voxliso/zone_profiles.dart';
 import 'package:voxliso/languages.dart';
 import 'dart:ui' show Rect;
 
@@ -871,6 +872,44 @@ void main() {
       expect(mid, greaterThan(440));
       expect(mid, lessThan(1320));
       expect(readabilityFromConfidence(const []), 0.5);
+    });
+  });
+  group('Profils de zone', () {
+    const salon = ZoneProfile(
+        name: 'Télé du salon', top: 0.6, bottom: 0.9, left: 0.1, right: 0.9, zoom: 2, exposure: -1);
+    const bureau = ZoneProfile(
+        name: 'Ordinateur', top: 0.7, bottom: 0.95, left: 0.2, right: 0.8, zoom: 1, exposure: 0);
+
+    test('enregistrés puis relus', () {
+      final back = decodeProfiles(encodeProfiles([salon, bureau]));
+      expect(back.map((p) => p.name), ['Télé du salon', 'Ordinateur']);
+      expect(back.first.zoom, 2);
+      expect(back.first.exposure, -1);
+    });
+    test('même nom : remplacé ; supprimé par son nom', () {
+      final changed = ZoneProfile(
+          name: 'télé du salon', top: 0.5, bottom: 0.8, left: 0.1, right: 0.9, zoom: 1, exposure: 0);
+      final list = upsertProfile([salon, bureau], changed);
+      expect(list.length, 2);
+      expect(list.first.top, 0.5);
+      expect(removeProfile(list, 'ORDINATEUR').map((p) => p.name), ['télé du salon']);
+    });
+    test('8 profils au plus', () {
+      var list = <ZoneProfile>[];
+      for (var i = 0; i < 10; i++) {
+        list = upsertProfile(list, ZoneProfile(
+            name: 'P$i', top: 0.6, bottom: 0.9, left: 0.1, right: 0.9, zoom: 1, exposure: 0));
+      }
+      expect(list.length, ZoneProfile.max);
+      expect(list.first.name, 'P2');
+    });
+    test('profil en cours reconnu', () {
+      expect(salon.matches(top: 0.601, bottom: 0.9, left: 0.1, right: 0.9, zoom: 2, exposure: -1), isTrue);
+      expect(salon.matches(top: 0.7, bottom: 0.9, left: 0.1, right: 0.9, zoom: 2, exposure: -1), isFalse);
+    });
+    test('données abîmées : liste vide', () {
+      expect(decodeProfiles('pas du json'), isEmpty);
+      expect(decodeProfiles('[{"top": 0.5}]'), isEmpty);
     });
   });
 }

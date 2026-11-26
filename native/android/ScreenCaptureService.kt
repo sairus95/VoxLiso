@@ -62,6 +62,12 @@ class ScreenCaptureService : Service() {
         /** Prévenu quand la capture s'arrête (bouton « Arrêter », fin d'autorisation…). */
         var onStopped: (() -> Unit)? = null
 
+        /** Lecture en pause (bouton « Pause » de la notification) : aucune analyse. */
+        @Volatile var paused = false
+
+        /** Service en cours, pour mettre à jour sa notification (pause / reprise). */
+        @Volatile var instance: ScreenCaptureService? = null
+
         /** Écriture des sous-titres : latin, chinese, japanese, korean. */
         @Volatile var script = "latin"
 
@@ -123,6 +129,23 @@ class ScreenCaptureService : Service() {
                 NotificationChannel(CHANNEL_ID, "Lecture de l'écran", NotificationManager.IMPORTANCE_LOW)
             )
         }
+        instance = this
+        paused = false
+        val notification = buildNotification()
+        if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    /** Notification remise à jour après « Pause » ou « Reprendre ». */
+    fun refreshNotification() {
+        if (!running) return
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
+    }
+
+    private fun buildNotification(): Notification {
         val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val stop = PendingIntent.getService(
             this, 1, Intent(this, ScreenCaptureService::class.java).setAction(ACTION_STOP), flags
@@ -138,19 +161,18 @@ class ScreenCaptureService : Service() {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
-        val notification = builder
-            .setContentTitle("VoxLiso lit les sous-titres de l'écran")
+        return builder
+            .setContentTitle(
+                if (paused) "VoxLiso en pause" else "VoxLiso lit les sous-titres de l'écran"
+            )
             .setContentText("Touchez pour revenir à VoxLiso")
             .setSmallIcon(R.mipmap.ic_launcher_monochrome)
             .setContentIntent(open)
             .setOngoing(true)
+            // Pause / Reprendre : VoxLiso décide (voix coupée), puis met à jour la notification.
+            .addAction(MainActivity.pauseAction(this, paused))
             .addAction(Notification.Action.Builder(null, "Arrêter", stop).build())
             .build()
-        if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
     }
 
     private fun startCapture(code: Int, data: Intent) {
@@ -224,7 +246,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun analyzeLatest() {
-        if (busy) return
+        if (busy || paused) return
         val r = reader ?: return
         val image = try {
             r.acquireLatestImage()
@@ -307,6 +329,8 @@ class ScreenCaptureService : Service() {
         if (stopping) return
         stopping = true
         running = false
+        paused = false
+        if (instance === this) instance = null
         bg?.removeCallbacksAndMessages(null)
         try {
             display?.release()
