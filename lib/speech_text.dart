@@ -20,7 +20,18 @@ String speakableText(String text, {String lang = ''}) {
   var t = original;
 
   t = _removeSpeakerLabel(t);
-  if (isAllCaps(t)) t = sentenceCase(t, lang: lang);
+  // Lettres espacées (« N O N ») : un seul mot, sinon chaque lettre est dite.
+  t = t.replaceAllMapped(_spacedLetters, (m) => m[0]!.replaceAll(' ', ''));
+  if (isAllCaps(t)) {
+    t = sentenceCase(t, lang: lang);
+  } else {
+    // Mot en majuscules dans un sous-titre en minuscules (« Il a dit NON ! »),
+    // réplique courte (« NON. ») ou majuscule mal lue au milieu d'un mot
+    // (« vIens ») : les moteurs de voix l'épelaient lettre par lettre
+    // (retour du 26/11/2026). Sigles, chiffres romains et mots avec chiffres
+    // gardés.
+    t = t.replaceAllMapped(_word, (m) => _calmWord(m[0]!, lang));
+  }
 
   t = t
       .replaceAll(_quotes, '')
@@ -64,6 +75,18 @@ String sentenceCase(String text, {String lang = ''}) {
   );
 }
 
+/// « NON » -> « Non », « vIens » -> « viens », « PARIS » -> « Paris » ;
+/// « FBI », « XIV », « MI6 » inchangés.
+String _calmWord(String w, String lang) {
+  if (w.length < 2 || !_upperInside.hasMatch(w.substring(1))) return w;
+  if (_acronyms.contains(w) || _roman.hasMatch(w) || _digit.hasMatch(w)) return w;
+  final rest = w.substring(1);
+  final lowered = lang == 'tr'
+      ? rest.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase()
+      : rest.toLowerCase();
+  return w.substring(0, 1) + lowered;
+}
+
 String _removeSpeakerLabel(String t) {
   final m = _speakerLabel.firstMatch(t);
   if (m == null) return t;
@@ -103,6 +126,13 @@ final RegExp _letterOrDigit = RegExp(r'[\p{L}\p{N}]', unicode: true);
 final RegExp _cased = RegExp(r'[\p{Lu}\p{Ll}]', unicode: true);
 final RegExp _lower = RegExp(r'\p{Ll}', unicode: true);
 final RegExp _word = RegExp(r'[\p{L}\p{N}]+', unicode: true);
+final RegExp _upperInside = RegExp(r'\p{Lu}', unicode: true);
+final RegExp _digit = RegExp(r'\p{N}', unicode: true);
+/// Chiffres romains (« Louis XIV », « Rocky II »), lus comme des nombres.
+final RegExp _roman = RegExp(r'^(?=[IVX]{2,})X{0,3}(?:IX|IV|V?I{0,3})$');
+/// Au moins trois lettres majuscules séparées par une espace (« N O N »).
+final RegExp _spacedLetters =
+    RegExp(r'(?<![\p{L}\p{N}])\p{Lu}(?: \p{Lu}){2,}(?![\p{L}\p{N}])', unicode: true);
 
 /// « JEAN : », « MME DUPONT: », « JEAN-PIERRE : » en tête de réplique.
 final RegExp _speakerLabel =
