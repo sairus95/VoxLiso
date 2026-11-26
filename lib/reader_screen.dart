@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import 'aim_beep.dart';
 import 'camera_input.dart';
 import 'enhance.dart';
 import 'history.dart';
@@ -423,6 +424,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // la zone agrandie et contrastée, et les deux lectures sont comparées mot à mot.
     final enhance = s.enhance && _reading;
     final found = _handleResult(result, frame.uprightSize, info, ms, feedTracker: !enhance);
+    if (!_reading) _aimBeep(found);
     if (!enhance) return;
     final main = found.fromMirror ? const <TextLine>[] : found.inZone;
     final up = frame.uprightSize;
@@ -452,6 +454,21 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   }
 
   /// Confiance de ML Kit pour chaque mot (Android ; rien sur iPhone).
+  /// Bip de cadrage avant la lecture (réglage « Bips pour cadrer la télé ») :
+  /// texte dans la zone jaune -> bip, d'autant plus aigu qu'il est lisible.
+  void _aimBeep(({List<TextLine> all, List<TextLine> inZone, bool fromMirror}) found) {
+    if (!s.aimBeeps || s.screenSource || found.fromMirror) return;
+    final hz = aimBeepHz(
+      found.inZone.length,
+      readabilityFromConfidence([
+        for (final l in found.inZone)
+          for (final e in l.elements)
+            if (e.confidence != null) e.confidence!,
+      ]),
+    );
+    if (hz != null) SystemBridge.beep(hz);
+  }
+
   static Map<String, double> _confidenceOf(Iterable<TextLine> lines) {
     final out = <String, double>{};
     for (final line in lines) {

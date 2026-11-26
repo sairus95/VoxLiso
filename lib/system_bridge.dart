@@ -48,6 +48,15 @@ class SystemBridge {
     } catch (_) {}
   }
 
+  /// Bip de cadrage : son de [hz] Hz pendant [ms] ms, au volume des médias
+  /// (comme la voix ; il s'entend aussi téléphone en mode silencieux).
+  static Future<void> beep(double hz, {int ms = 80}) async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod<bool>('beep', {'hz': hz, 'ms': ms});
+    } catch (_) {}
+  }
+
   /// Mise à jour : confie le téléchargement de [url] au gestionnaire de
   /// téléchargements d'Android. Renvoie son numéro, ou -1.
   static Future<int> startDownload(String url, String name, String title) async {

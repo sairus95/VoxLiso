@@ -5,6 +5,9 @@ import android.app.DownloadManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -124,6 +127,13 @@ class MainActivity : FlutterActivity() {
                     )
                 }
                 "filesDir" -> result.success(filesDir.absolutePath)
+                // Bip de cadrage (réglage « Bips pour cadrer la télé »).
+                "beep" -> {
+                    val hz = call.argument<Double>("hz") ?: 880.0
+                    val ms = call.argument<Int>("ms") ?: 80
+                    playBeep(hz, ms.coerceIn(20, 500))
+                    result.success(true)
+                }
                 // Luminosité de l'écran pour VoxLiso seulement (-1 = celle du téléphone).
                 "setBrightness" -> {
                     val value = call.argument<Double>("value") ?: -1.0
@@ -355,5 +365,50 @@ class MainActivity : FlutterActivity() {
             )
         }
         super.onDestroy()
+    }
+
+    /**
+     * Son pur de [hz] Hz pendant [ms] ms (fondu de 5 ms au début et à la fin
+     * pour éviter les claquements), au volume des médias, comme la voix.
+     */
+    private fun playBeep(hz: Double, ms: Int) {
+        Thread {
+            try {
+                val rate = 22050
+                val n = rate * ms / 1000
+                val fade = minOf(n / 4, rate / 200)
+                val buf = ShortArray(n)
+                for (i in 0 until n) {
+                    var amp = 0.35
+                    if (i < fade) amp *= i.toDouble() / fade
+                    if (i > n - fade) amp *= (n - i).toDouble() / fade
+                    buf[i] = (Math.sin(2.0 * Math.PI * hz * i / rate) * amp * Short.MAX_VALUE)
+                        .toInt().toShort()
+                }
+                val track = AudioTrack.Builder()
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .setSampleRate(rate)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .build()
+                    )
+                    .setTransferMode(AudioTrack.MODE_STATIC)
+                    .setBufferSizeInBytes(n * 2)
+                    .build()
+                track.write(buf, 0, n)
+                track.play()
+                Thread.sleep(ms + 60L)
+                track.release()
+            } catch (e: Exception) {
+                // Pas de son : tant pis, rien d'autre ne dépend du bip.
+            }
+        }.start()
     }
 }

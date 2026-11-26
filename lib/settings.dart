@@ -244,6 +244,11 @@ class AppSettings {
   set enhance(bool v) => _prefs.setBool('enhance', v);
 
   /// Correction des mots mal lus avec un dictionnaire par langue.
+  /// Bips pour cadrer la télé avant la lecture (activés d'office en mode
+  /// grands boutons, pensé pour les personnes qui voient mal).
+  bool get aimBeeps => _prefs.getBool('aimBeeps') ?? largeMode;
+  set aimBeeps(bool v) => _prefs.setBool('aimBeeps', v);
+
   bool get spellFix => _prefs.getBool('spellFix') ?? true;
   set spellFix(bool v) => _prefs.setBool('spellFix', v);
 
