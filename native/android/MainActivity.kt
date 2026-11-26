@@ -3,7 +3,18 @@ package com.voxliso.voxliso
 import android.app.Activity
 import android.app.DownloadManager
 import android.app.PendingIntent
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.content.pm.PackageInstaller
 import android.media.AudioAttributes
 import android.media.AudioFormat
@@ -32,8 +43,34 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQUEST_CAPTURE = 4242
+        private const val REQUEST_NOTIFICATIONS = 4343
         private const val ACTION_INSTALL_STATUS = "com.voxliso.voxliso.INSTALL_STATUS"
+
+        /** Boutons de la notification de lecture : extra « do » = pause, resume, stop. */
+        const val ACTION_READING = "com.voxliso.voxliso.READING"
+        private const val READING_CHANNEL = "voxliso_reading"
+        private const val READING_NOTIFICATION_ID = 8
+
+        private fun readingIntent(context: Context, what: String, code: Int): PendingIntent =
+            PendingIntent.getBroadcast(
+                context, code,
+                Intent(ACTION_READING).setPackage(context.packageName).putExtra("do", what),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+        /** Bouton « Pause » ou « Reprendre » (notification de la caméra ou de l'écran). */
+        fun pauseAction(context: Context, paused: Boolean): Notification.Action =
+            if (paused) {
+                Notification.Action.Builder(null, "Reprendre", readingIntent(context, "resume", 11)).build()
+            } else {
+                Notification.Action.Builder(null, "Pause", readingIntent(context, "pause", 10)).build()
+            }
     }
+
+    private var systemChannel: MethodChannel? = null
+    private var readingReceiver: BroadcastReceiver? = null
+    private var deviceCallback: AudioDeviceCallback? = null
+    private var notificationsAsked = false
 
     private var pendingStart: MethodChannel.Result? = null
     private var sink: EventChannel.EventSink? = null
@@ -78,8 +115,22 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        MethodChannel(messenger, "voxliso/system").setMethodCallHandler { call, result ->
+        val system = MethodChannel(messenger, "voxliso/system")
+        systemChannel = system
+        listenReadingButtons()
+        listenHeadphones()
+        system.setMethodCallHandler { call, result ->
             when (call.method) {
+                // Lecture : « reading », « paused » ou « off » (notification avec Pause / Reprendre).
+                "setReadingState" -> {
+                    applyReadingState(
+                        call.argument<String>("state") ?: "off",
+                        call.argument<Boolean>("screen") ?: false
+                    )
+                    result.success(true)
+                }
+                // Écouteurs (Bluetooth, filaires, USB, appareil auditif) branchés ?
+                "headphones" -> result.success(headphonesConnected())
                 // Moteurs de synthèse vocale installés : [{name, label}].
                 "ttsEngines" -> {
                     var tts: TextToSpeech? = null
@@ -358,14 +409,6 @@ class MainActivity : FlutterActivity() {
         super.onPause()
     }
 
-    override fun onDestroy() {
-        if (isFinishing && ScreenCaptureService.running) {
-            startService(
-                Intent(this, ScreenCaptureService::class.java).setAction(ScreenCaptureService.ACTION_STOP)
-            )
-        }
-        super.onDestroy()
-    }
 
     /**
      * Son pur de [hz] Hz pendant [ms] ms (fondu de 5 ms au début et à la fin
@@ -410,5 +453,138 @@ class MainActivity : FlutterActivity() {
                 // Pas de son : tant pis, rien d'autre ne dépend du bip.
             }
         }.start()
+    }
+
+    // ------------------------------------------------ notification de lecture
+
+    /** Boutons Pause / Reprendre / Arrêter des notifications -> VoxLiso (Dart). */
+    private fun listenReadingButtons() {
+        if (readingReceiver != null) return
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val what = intent.getStringExtra("do") ?: return
+                systemChannel?.invokeMethod("readingAction", what)
+            }
+        }
+        readingReceiver = r
+        val filter = IntentFilter(ACTION_READING)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(r, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(r, filter)
+        }
+    }
+
+    /**
+     * Lecture « reading », « paused » ou « off ». Mode écran : la notification du
+     * service est mise à jour (et l'analyse suspendue en pause). Mode caméra :
+     * VoxLiso affiche sa propre notification avec Pause / Reprendre / Arrêter.
+     */
+    private fun applyReadingState(state: String, screen: Boolean) {
+        val nm = getSystemService(NotificationManager::class.java)
+        val paused = state == "paused"
+        if (screen) {
+            ScreenCaptureService.paused = paused
+            ScreenCaptureService.instance?.refreshNotification()
+            nm.cancel(READING_NOTIFICATION_ID)
+            return
+        }
+        if (state == "off") {
+            nm.cancel(READING_NOTIFICATION_ID)
+            return
+        }
+        askNotificationsOnce()
+        if (Build.VERSION.SDK_INT >= 26) {
+            nm.createNotificationChannel(
+                NotificationChannel(READING_CHANNEL, "Lecture des sous-titres", NotificationManager.IMPORTANCE_LOW)
+            )
+        }
+        val open = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            Notification.Builder(this, READING_CHANNEL)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        val n = builder
+            .setContentTitle(if (paused) "VoxLiso en pause" else "VoxLiso lit les sous-titres")
+            .setContentText("Touchez pour revenir à VoxLiso")
+            .setSmallIcon(R.mipmap.ic_launcher_monochrome)
+            .setContentIntent(open)
+            .setOngoing(true)
+            .addAction(pauseAction(this, paused))
+            .addAction(Notification.Action.Builder(null, "Arrêter", readingIntent(this, "stop", 12)).build())
+            .build()
+        try {
+            nm.notify(READING_NOTIFICATION_ID, n)
+        } catch (e: SecurityException) {
+            // Notifications refusées : la lecture continue sans.
+        }
+    }
+
+    /** Android 13+ : les notifications demandent une autorisation (une fois par lancement). */
+    private fun askNotificationsOnce() {
+        if (Build.VERSION.SDK_INT < 33 || notificationsAsked) return
+        notificationsAsked = true
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+        }
+    }
+
+    // ------------------------------------------------------------ écouteurs
+
+    private val headphoneTypes = buildSet {
+        add(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
+        add(AudioDeviceInfo.TYPE_BLUETOOTH_SCO)
+        add(AudioDeviceInfo.TYPE_WIRED_HEADSET)
+        add(AudioDeviceInfo.TYPE_WIRED_HEADPHONES)
+        add(AudioDeviceInfo.TYPE_USB_HEADSET)
+        if (Build.VERSION.SDK_INT >= 28) add(AudioDeviceInfo.TYPE_HEARING_AID)
+        if (Build.VERSION.SDK_INT >= 31) add(AudioDeviceInfo.TYPE_BLE_HEADSET)
+    }
+
+    private fun headphonesConnected(): Boolean {
+        val am = getSystemService(AudioManager::class.java)
+        return am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { it.type in headphoneTypes }
+    }
+
+    /** Écouteurs branchés ou débranchés -> VoxLiso (Dart), pour couper la voix. */
+    private fun listenHeadphones() {
+        if (deviceCallback != null) return
+        val am = getSystemService(AudioManager::class.java)
+        val cb = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = notifyHeadphones()
+            override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) = notifyHeadphones()
+        }
+        deviceCallback = cb
+        am.registerAudioDeviceCallback(cb, android.os.Handler(mainLooper))
+    }
+
+    private fun notifyHeadphones() {
+        systemChannel?.invokeMethod("headphonesChanged", headphonesConnected())
+    }
+
+    override fun onDestroy() {
+        readingReceiver?.let {
+            try {
+                unregisterReceiver(it)
+            } catch (_: Exception) {
+            }
+        }
+        readingReceiver = null
+        deviceCallback?.let { getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(it) }
+        deviceCallback = null
+        getSystemService(NotificationManager::class.java).cancel(READING_NOTIFICATION_ID)
+        if (isFinishing && ScreenCaptureService.running) {
+            startService(
+                Intent(this, ScreenCaptureService::class.java).setAction(ScreenCaptureService.ACTION_STOP)
+            )
+        }
+        super.onDestroy()
     }
 }
