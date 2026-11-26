@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voxliso/history.dart';
 import 'package:voxliso/language_detector.dart';
+import 'package:voxliso/aim_beep.dart';
 import 'package:voxliso/languages.dart';
 import 'dart:ui' show Rect;
 
@@ -824,5 +825,52 @@ void main() {
     expect(phoneLanguage('pt-BR').code, 'pt');
     // Téléphone dans une langue que VoxLiso ne lit pas : le français.
     expect(phoneLanguage('ar-EG').code, 'fr');
+  });
+  group('Sous-titres brefs', () {
+    final dict = WordList.fromWords(
+        ['non', 'merci', 'je', 'ne', 'sais', 'pas', 'quoi', 'faire']);
+    SubtitleTracker tracker() => SubtitleTracker()..dictionary = () => dict;
+
+    test('vu une seule fois, fait de vrais mots : dit quand même', () {
+      final t = tracker();
+      expect(t.push('Non merci.'), isNull);
+      expect(t.push('Je ne sais pas quoi faire.'), 'Non merci.');
+    });
+    test('image floue vue une seule fois : pas dite', () {
+      final t = tracker();
+      expect(t.push('Nqn mrc1.'), isNull);
+      expect(t.push('Je ne sais pas quoi faire.'), isNull);
+    });
+    test('début d\'un sous-titre qui apparaît : pas dit à part', () {
+      final t = tracker();
+      expect(t.push('Je ne sais'), isNull);
+      expect(t.push('Je ne sais pas quoi faire.'), isNull);
+      expect(t.push('Je ne sais pas quoi faire.'), 'Je ne sais pas quoi faire.');
+    });
+    test('vu une fois puis écran vide : dit à la 2e image vide', () {
+      final t = tracker();
+      expect(t.push('Non merci.'), isNull);
+      expect(t.push(''), isNull);
+      expect(t.push(''), 'Non merci.');
+    });
+    test('sans dictionnaire : comme avant (deux images)', () {
+      final t = SubtitleTracker();
+      expect(t.push('Non merci.'), isNull);
+      expect(t.push('Je ne sais pas quoi faire.'), isNull);
+    });
+  });
+
+  group('Bips de cadrage', () {
+    test('rien dans la zone : pas de bip', () {
+      expect(aimBeepHz(0, 1), isNull);
+    });
+    test('plus aigu quand le texte est lisible', () {
+      expect(aimBeepHz(1, readabilityFromConfidence([0.3, 0.35])), 440);
+      expect(aimBeepHz(2, readabilityFromConfidence([0.97, 0.99])), 1320);
+      final mid = aimBeepHz(1, readabilityFromConfidence([0.7]))!;
+      expect(mid, greaterThan(440));
+      expect(mid, lessThan(1320));
+      expect(readabilityFromConfidence(const []), 0.5);
+    });
   });
 }

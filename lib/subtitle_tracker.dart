@@ -105,7 +105,9 @@ class SubtitleTracker {
 
     if (norm.replaceAll(' ', '').length < 2) {
       // Le sous-titre a disparu pendant qu'on départageait : on le dit quand même.
-      final pending = _takePending();
+      // Vu une seule fois (sous-titre bref) : dit à la 2e image vide, pas à la
+      // 1re (simple reflet ou image floue au milieu d'un sous-titre).
+      final pending = _takePending(briefOk: _blank >= 1);
       _blank++;
       if (_blank >= 2) {
         _candidate = null;
@@ -137,8 +139,9 @@ class SubtitleTracker {
         _candidateNorm = norm;
       }
     } else {
-      // Nouveau sous-titre : le précédent, s'il attendait d'être départagé, est dit d'abord.
-      pending = _takePending();
+      // Nouveau sous-titre : le précédent, s'il attendait d'être départagé (ou
+      // s'il n'a été vu qu'une fois), est dit d'abord.
+      pending = _takePending(briefOk: true, next: norm);
       _shown = null;
       _candidate = text;
       _candidateNorm = norm;
@@ -178,10 +181,35 @@ class SubtitleTracker {
     return _readings.every((r) => normalizeForCompare(r.text) == first);
   }
 
-  /// Sous-titre assez vu mais pas encore dit (il attendait d'être départagé).
-  String? _takePending() {
-    if (_candidate == null || _candidateDone || _count < stableFrames) return null;
+  /// Sous-titre assez vu mais pas encore dit (il attendait d'être départagé),
+  /// ou sous-titre bref vu une seule fois mais fait de vrais mots ([briefOk]).
+  /// [next] : texte simplifié de l'image suivante.
+  String? _takePending({bool briefOk = false, String? next}) {
+    if (_candidate == null || _candidateDone) return null;
+    if (_count < stableFrames && !(briefOk && _briefButReal(next))) return null;
     return _emitCandidate();
+  }
+
+  static final RegExp _word = RegExp(r"[\p{L}'’]+", unicode: true);
+
+  /// Sous-titre affiché trop peu de temps pour être lu deux fois (moins
+  /// d'une seconde) : dit quand même si au moins 80 % de ses mots sont dans
+  /// le dictionnaire de la langue (sinon c'est sans doute une image floue ou
+  /// un reflet). Pas s'il est le début du texte qui suit (sous-titre en train
+  /// d'apparaître : il sera dit en entier).
+  bool _briefButReal(String? next) {
+    if (_count != 1 || stableFrames < 2) return false;
+    if (next != null && ' $next '.contains(' $_candidateNorm ')) return false;
+    if (_candidateNorm.replaceAll(' ', '').length < 3) return false;
+    final dict = dictionary?.call();
+    if (dict == null) return false;
+    final words = [
+      for (final m in _word.allMatches(_candidate!))
+        if (m.group(0)!.replaceAll(RegExp(r"['’]"), '').length >= 2) m.group(0)!,
+    ];
+    if (words.isEmpty) return false;
+    final known = words.where((w) => ReadingVote.isKnownWord(w, dict)).length;
+    return known >= words.length * 0.8;
   }
 
   /// Dit le sous-titre en cours : texte obtenu en combinant toutes ses lectures.

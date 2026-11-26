@@ -944,6 +944,16 @@ class _SettingsSheetState extends State<SettingsSheet> {
           value: s.topSubtitles,
           onChanged: (v) => setState(() => s.topSubtitles = v),
         ),
+        if (Platform.isAndroid)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Bips pour cadrer la télé'),
+            subtitle: const Text(
+                'Avant la lecture, un bip quand du texte est dans la zone jaune : plus il est '
+                'aigu, mieux le texte est lisible. Pour viser la télé sans regarder l\'écran.'),
+            value: s.aimBeeps,
+            onChanged: (v) => setState(() => s.aimBeeps = v),
+          ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Lecture renforcée'),
