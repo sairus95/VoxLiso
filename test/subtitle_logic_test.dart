@@ -327,6 +327,28 @@ void main() {
       expect(SpellFixer.fix('CORNE HERE', en), 'COME HERE');
       expect(SpellFixer.fix('Corne here.', en), 'Come here.');
     });
+
+    final fr2 = WordList.fromWords(
+        ['je', 'te', 'il', 'vous', 'plaît', 'si', 'gentiment', 'merci', 'plaie', 'pli', 'est']);
+
+    test('« SHte plaí » -> « S\'il te plaît » (retour du 26/11/2026)', () {
+      expect(SpellFixer.fix('SHte plaí', fr2, lang: 'fr'), "S'il te plaît");
+      expect(SpellFixer.fix('Sh vous plaît.', fr2, lang: 'fr'), "S'il vous plaît.");
+      expect(SpellFixer.fix('Merci, sil te plaît.', fr2, lang: 'fr'), "Merci, s'il te plaît.");
+      expect(SpellFixer.fix("S'il te plaît", fr2, lang: 'fr'), "S'il te plaît");
+      // Seulement devant « te / vous plaît », et seulement en français.
+      expect(SpellFixer.fix('Sh, il est là.', fr2, lang: 'fr'), 'Sh, il est là.');
+      expect(SpellFixer.fix('SHte plaí', fr2, lang: 'de'), 'SHte plaît'); // « SH » laissé
+    });
+
+    test('deux mots collés, accent faux : « sigentimènt » -> « si gentiment »', () {
+      expect(SpellFixer.fix('Merci sigentimènt !', fr2), 'Merci si gentiment !');
+      expect(SpellFixer.fix('Merci gentimènt.', fr2), 'Merci gentiment.');
+    });
+
+    test('lettre perdue : « plaí » -> « plaît » (le mot le plus courant)', () {
+      expect(SpellFixer.fix('ça te plaí ?', fr2), 'ça te plaît ?');
+    });
   });
 
   group('SubtitleLocator', () {

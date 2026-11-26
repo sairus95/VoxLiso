@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io' show gzip;
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart' show rootBundle;
 
@@ -45,6 +46,14 @@ final RegExp _hasLetter = RegExp(r'\p{L}', unicode: true);
 final RegExp _sentenceEnd = RegExp(r'[.!?…:]\s*$');
 final RegExp _noise = RegExp(r'[0-9|]');
 
+/// « s'il te plaît » mal lu : « SHte », « Sh vous », « Sil te », « S1l te »…
+/// (l'apostrophe et « il » lus comme un « H », ou l'apostrophe perdue).
+final RegExp _silFr = RegExp(
+  r"(?<![\p{L}'’])([Ss])(?:[Hh]|['’]?[IilL1|]{2})\s*(?=(?:te|vous)\s+pla)",
+  unicode: true,
+);
+const String _alphabet = 'abcdefghijklmnopqrstuvwxyz';
+
 /// Corrige les mots mal lus par la reconnaissance de texte, avant de les dire
 /// ou de les traduire. Ne touche jamais un mot du dictionnaire.
 class SpellFixer {
@@ -78,8 +87,10 @@ class SpellFixer {
     });
   }
 
-  /// Corrige [text] avec le dictionnaire [list].
-  static String fix(String text, WordList list, {int maxRank = 30000}) {
+  /// Corrige [text] avec le dictionnaire [list] ([lang] : expressions
+  /// propres à une langue, ex. « s'il te plaît » en français).
+  static String fix(String text, WordList list, {int maxRank = 30000, String lang = ''}) {
+    if (lang == 'fr') text = text.replaceAllMapped(_silFr, (m) => "${m[1]}'il ");
     final out = StringBuffer();
     var last = 0;
     for (final m in _token.allMatches(text)) {
@@ -136,10 +147,54 @@ class SpellFixer {
         i = lower.indexOf(from, i + 1);
       }
     }
+    // 3. Une lettre perdue ou en trop (« plaí » -> « plaît ») : mots de 4 lettres
+    //    ou plus, et seulement vers un mot courant (rang < 10 000).
+    if (best == null && lower.length >= 4) {
+      final s = _strip(lower);
+      final saved = bestRank;
+      bestRank = math.min(maxRank, 10000);
+      for (var i = 0; i < s.length; i++) {
+        consider(s.substring(0, i) + s.substring(i + 1));
+      }
+      for (var i = 0; i <= s.length; i++) {
+        for (final ch in _alphabet.split('')) {
+          consider(s.substring(0, i) + ch + s.substring(i));
+        }
+      }
+      if (best == null) bestRank = saved;
+    }
+    // 4. Deux mots collés (« sigentimènt » -> « si gentiment ») : deux mots
+    //    courants (rang < 20 000) de 2 lettres ou plus.
+    if (best == null && lower.length >= 5) {
+      final split = _split(lower, list, math.min(maxRank, 20000));
+      if (split != null) best = split;
+    }
     final found = best;
     if (found == null || found == lower) return word;
     if (allCaps) return found.toUpperCase();
     if (capitalized) return found[0].toUpperCase() + found.substring(1);
     return found;
+  }
+
+  /// Meilleure coupure de [lower] en deux mots du dictionnaire, ou null.
+  static String? _split(String lower, WordList list, int maxRank) {
+    String? resolve(String part) {
+      if (list.rank.containsKey(part)) return part;
+      return list.byNorm[_strip(part)];
+    }
+
+    String? best;
+    var bestScore = maxRank;
+    for (var i = 2; i <= lower.length - 2; i++) {
+      final a = resolve(lower.substring(0, i));
+      final b = resolve(lower.substring(i));
+      if (a == null || b == null) continue;
+      final score = math.max(list.rank[a]!, list.rank[b]!);
+      if (score < bestScore) {
+        bestScore = score;
+        best = '$a $b';
+      }
+    }
+    return best;
   }
 }

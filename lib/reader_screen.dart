@@ -1010,7 +1010,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Mots mal lus corrigés avec le dictionnaire de la langue (« corne » -> « come »).
     if (s.spellFix && SpellFixer.languages.contains(lang)) {
       final list = await _spell.load(lang);
-      if (list != null) segments = [for (final t in segments) SpellFixer.fix(t, list)];
+      if (list != null) segments = [for (final t in segments) SpellFixer.fix(t, list, lang: lang)];
     }
     if (s.autoLang && lang != before) {
       s.detectedLang = lang;
