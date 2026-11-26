@@ -798,14 +798,14 @@ void main() {
     test('texte normal et sigle isolé inchangés', () {
       expect(speakableText('Il travaille à la SNCF.'), 'Il travaille à la SNCF.');
       expect(speakableText('OK.'), 'OK.');
-      expect(speakableText('NON'), 'NON');
+      expect(speakableText('NON'), 'Non'); // épelé « N, O, N » avant le 26/11/2026
     });
 
     test('nom du personnage retiré', () {
       expect(speakableText('JEAN : Tu viens ?'), 'Tu viens ?');
       expect(speakableText('MARIE-CLAIRE: Bonjour.'), 'Bonjour.');
       expect(speakableText('JOHN SMITH: Hello there.'), 'Hello there.');
-      expect(speakableText('ATTENTION : la porte.'), 'ATTENTION : la porte.');
+      expect(speakableText('ATTENTION : la porte.'), 'Attention : la porte.');
       expect(speakableText('OK : on y va.'), 'OK : on y va.');
     });
 
@@ -932,6 +932,30 @@ void main() {
     test('données abîmées : liste vide', () {
       expect(decodeProfiles('pas du json'), isEmpty);
       expect(decodeProfiles('[{"top": 0.5}]'), isEmpty);
+    });
+  });
+  group('Mots épelés lettre par lettre (retour du 26/11/2026)', () {
+    test('mot en majuscules dans une phrase normale', () {
+      expect(speakableText('Il a dit NON !'), 'Il a dit Non !');
+      expect(speakableText('Je VEUX partir.'), 'Je Veux partir.');
+      expect(speakableText('Bienvenue à PARIS.'), 'Bienvenue à Paris.');
+    });
+    test('réplique courte en majuscules', () {
+      expect(speakableText('OUI.'), 'Oui.');
+      expect(speakableText('- TU ? - MOI.'), '- Tu ? - Moi.');
+    });
+    test('majuscule mal lue au milieu d\'un mot', () {
+      expect(speakableText('Tu vIens ?'), 'Tu viens ?');
+      expect(speakableText('SHte plaît'), 'Shte plaît');
+    });
+    test('lettres espacées', () {
+      expect(speakableText('N O N, merci.'), 'Non, merci.');
+    });
+    test('sigles, chiffres romains et codes gardés', () {
+      expect(speakableText('Le FBI arrive.'), 'Le FBI arrive.');
+      expect(speakableText('Louis XIV est là.'), 'Louis XIV est là.');
+      expect(speakableText('Appelle le MI6.'), 'Appelle le MI6.');
+      expect(speakableText('On regarde la TV.'), 'On regarde la TV.');
     });
   });
 }
