@@ -418,23 +418,23 @@ void main() {
       expect(p.next(0), 1.0);
       expect(p.next(10), 1.0);
     });
-    test('accélère avec le retard : +40 % pour un sous-titre en attente, +60 % au plus', () {
+    test('accélère avec le retard : +40 % pour un sous-titre en attente, +80 % au plus', () {
       final p = RatePacer();
       final a = p.next(50);
       expect(a, greaterThan(1.0));
-      expect(a, lessThanOrEqualTo(1.25));
+      expect(a, lessThanOrEqualTo(1.3));
       p.next(100);
       expect(p.next(100), 1.4);
       p.next(300);
-      expect(p.next(300), 1.6);
-      expect(p.next(1000), 1.6);
+      expect(p.next(300), 1.8);
+      expect(p.next(1000), 1.8);
     });
     test('monte par paliers et redescend doucement', () {
       final p = RatePacer();
-      expect(p.next(300), 1.25); // +25 % au plus d'un coup
-      expect(p.next(300), 1.5);
+      expect(p.next(300), 1.3); // +30 % au plus d'un coup
+      expect(p.next(300), 1.6);
+      expect(p.next(0), closeTo(1.5, 1e-9));
       expect(p.next(0), closeTo(1.4, 1e-9));
-      expect(p.next(0), closeTo(1.3, 1e-9));
       p.reset();
       expect(p.factor, 1.0);
     });
@@ -957,5 +957,12 @@ void main() {
       expect(speakableText('Appelle le MI6.'), 'Appelle le MI6.');
       expect(speakableText('On regarde la TV.'), 'On regarde la TV.');
     });
+  });
+  test('scène rapide : 6 sous-titres de 60 caractères en attente, aucun abandonné', () {
+    expect(
+      SpeechService.toDrop([for (var b = 1; b <= 6; b++) (batch: b, weight: 60)],
+          SpeechService.maxWaitingChars),
+      0,
+    );
   });
 }

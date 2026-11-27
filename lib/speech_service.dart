@@ -51,10 +51,12 @@ class SpeechService {
 
   /// Au-delà de ce retard (caractères en attente, chinois/japonais/coréen ×3),
   /// les plus anciens sous-titres en attente sont abandonnés pour ne pas
-  /// décrocher de l'image : environ 12 s de parole. Avant la v1.0.62, la limite
+  /// décrocher de l'image : environ 15 s de parole avec la voix accélérée
+  /// (v1.0.87 ; 240 avant : dans une scène rapide, un sous-titre sur deux
+  /// était abandonné). Avant la v1.0.62, la limite
   /// était de 4 répliques : deux dialogues courts (« - Quoi ? - Rien. ») en
   /// attente suffisaient à faire sauter des phrases sans vrai retard.
-  static const int maxWaitingChars = 240;
+  static const int maxWaitingChars = 400;
 
   /// Sous-titres abandonnés depuis le début (diagnostic).
   int dropped = 0;
