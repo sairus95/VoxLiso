@@ -16,3 +16,6 @@ const String kBuiltInAzureRegion = String.fromEnvironment('AZURE_TRANSLATOR_REGI
 /// phrases à l'écran »). Chaque sous-titre est lu tel quel, dans sa langue. Le
 /// code reste en place : `--dart-define=TRANSLATION=true` la remet.
 const bool kTranslationEnabled = bool.fromEnvironment('TRANSLATION');
+
+/// Créateur de l'application, affiché en bas des Réglages et dans le tutoriel.
+const String kAppAuthor = 'Arnauld Dodard';

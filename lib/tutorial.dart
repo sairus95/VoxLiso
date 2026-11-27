@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'languages.dart';
 import 'logo.dart';
 import 'settings.dart';
+import 'version.dart';
 
 /// Tutoriel du premier lancement : placer le téléphone, la bande jaune,
 /// la langue, la lecture. Revoir depuis les réglages.
@@ -127,6 +128,10 @@ class _TutorialScreenState extends State<TutorialScreen> {
                             const SizedBox(height: 6),
                             Text('Vos sous-titres, lus à voix haute.',
                                 style: theme.textTheme.bodyLarge
+                                    ?.copyWith(color: const Color(0xFFC9D2EA))),
+                            const SizedBox(height: 12),
+                            Text('Une application d\'$kAppAuthor',
+                                style: theme.textTheme.bodyMedium
                                     ?.copyWith(color: const Color(0xFFC9D2EA))),
                           ]),
                         )

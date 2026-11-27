@@ -988,6 +988,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ),
         const SizedBox(height: 8),
         Text('VoxLiso version $kAppVersion', style: theme.textTheme.bodySmall),
+        Text('Application créée par $kAppAuthor', style: theme.textTheme.bodySmall),
         if (Updater.supported) ...[
           const SizedBox(height: 4),
           Align(
