@@ -230,7 +230,7 @@ class AppSettings {
   set ignoreStatic(bool v) => _prefs.setBool('ignoreStatic', v);
 
   /// Seulement les sous-titres : menus, panneaux du décor, bandeaux, heure et
-  /// adresses web écartés (`SubtitleStyle`, v1.0.92).
+  /// adresses web écartés (`SubtitleStyle`, v1.0.93).
   bool get subtitlesOnly => _prefs.getBool('subtitlesOnly') ?? true;
   set subtitlesOnly(bool v) => _prefs.setBool('subtitlesOnly', v);
 
