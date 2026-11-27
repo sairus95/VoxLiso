@@ -456,7 +456,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final main = found.fromMirror ? const <TextLine>[] : found.inZone;
     final up = frame.uprightSize;
     final second = await _enhancedPass(image, cam,
-        showBoxes: main.isEmpty, visible: found.all.length, seen: [
+        showBoxes: main.isEmpty, visibleLines: found.all.length, seen: [
       for (final l in main)
         Rect.fromLTRB(l.boundingBox.left / up.width, l.boundingBox.top / up.height,
             l.boundingBox.right / up.width, l.boundingBox.bottom / up.height),
@@ -485,7 +485,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// Confiance de ML Kit pour chaque mot (Android ; rien sur iPhone).
   /// Bip de cadrage avant la lecture (réglage « Bips pour cadrer la télé ») :
   /// texte dans la zone jaune -> bip, d'autant plus aigu qu'il est lisible.
-  void _aimBeep(({List<TextLine> all, List<TextLine> inZone, bool fromMirror}) found) {
+  void _aimBeep(({List<TextLine> all, List<TextLine> inZone, bool fromMirror, List<SeenGeom> geoms}) found) {
     if (!s.aimBeeps || s.screenSource || found.fromMirror || _speech.muted) return;
     final hz = aimBeepHz(
       found.inZone.length,
@@ -529,7 +529,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// [seen] : lignes retenues sur l'image normale (fractions de l'image) ; le
   /// recadrage les contient en entier, même si elles dépassent de la zone.
   Future<List<TextLine>?> _enhancedPass(CameraImage image, CameraDescription cam,
-      {required bool showBoxes, int visible = 0, List<Rect> seen = const []}) async {
+      {required bool showBoxes, int visibleLines = 0, List<Rect> seen = const []}) async {
     final crop = _crop;
     final zone = Rect.fromLTRB(
       crop.ox + s.roiLeft * crop.vw,
@@ -576,7 +576,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         if (!fixedIdx.contains(i)) found[i],
     ];
     final style = _onlySubtitles(unfixed, (f) => SeenGeom(f.$2, f.$1.text, angle: f.$1.angle),
-        zone: zone, visible: visible, key: _cameraStyleKey);
+        zone: zone, visible: visibleLines, key: _cameraStyleKey);
     final kept = style.kept;
     Rect toDisplay(Rect r) => Rect.fromLTRB(
           (r.left - crop.ox) / crop.vw,
