@@ -888,8 +888,8 @@ void main() {
       'non', 'merci', 'je', 'ne', 'sais', 'pas', 'quoi', 'faire', 'tu', 'viens', 'ce', 'soir',
     ]);
     SubtitleTracker tracker() => SubtitleTracker()
-      ..dictionary = () => dict
-      ..fastClean = true;
+      ..fastClean = true
+      ..dictionary = () => dict;
 
     test('sous-titre net : dit dès la 1re image', () {
       final t = tracker();
