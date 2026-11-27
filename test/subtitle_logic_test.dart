@@ -416,15 +416,15 @@ void main() {
     test('vitesse normale sans retard', () {
       final p = RatePacer();
       expect(p.next(0), 1.0);
-      expect(p.next(10), 1.0);
+      expect(p.next(5), 1.0);
     });
     test('accélère avec le retard : +40 % pour un sous-titre en attente, +80 % au plus', () {
       final p = RatePacer();
       final a = p.next(50);
       expect(a, greaterThan(1.0));
       expect(a, lessThanOrEqualTo(1.3));
-      p.next(100);
-      expect(p.next(100), 1.4);
+      p.next(80);
+      expect(p.next(80), 1.4);
       p.next(300);
       expect(p.next(300), 1.8);
       expect(p.next(1000), 1.8);
@@ -880,6 +880,66 @@ void main() {
       final t = SubtitleTracker();
       expect(t.push('Non merci.'), isNull);
       expect(t.push('Je ne sais pas quoi faire.'), isNull);
+    });
+  });
+
+  group('Temps réel', () {
+    final dict = WordList.fromWords([
+      'non', 'merci', 'je', 'ne', 'sais', 'pas', 'quoi', 'faire', 'tu', 'viens', 'ce', 'soir',
+    ]);
+    SubtitleTracker tracker() => SubtitleTracker()
+      ..fastClean = true
+      ..dictionary = () => dict;
+
+    test('sous-titre net : dit dès la 1re image', () {
+      final t = tracker();
+      expect(t.push('Je ne sais pas quoi faire.'), 'Je ne sais pas quoi faire.');
+      expect(t.push('Je ne sais pas quoi faire.'), isNull);
+      expect(t.lastAppearedAt, isNotNull);
+    });
+    test('lecture douteuse : attend comme avant', () {
+      final t = tracker();
+      expect(t.push('Je ne sqis pas qvoi faire.'), isNull);
+      expect(t.push('Je ne sais pas quoi faire.'), 'Je ne sais pas quoi faire.');
+    });
+    test('ML Kit peu sûr : attend comme avant', () {
+      final t = tracker();
+      expect(t.push('Non merci.', confidence: {'non': 0.3, 'merci': 0.4}), isNull);
+    });
+    test('sans dictionnaire : attend comme avant', () {
+      final t = SubtitleTracker()..fastClean = true;
+      expect(t.push('Non merci.'), isNull);
+      expect(t.push('Non merci.'), 'Non merci.');
+    });
+    test('deux sous-titres à la suite : le nouveau suit aussitôt', () {
+      final t = tracker()..fastClean = false;
+      expect(t.push('Non merci.'), isNull); // vu une fois
+      t.fastClean = true;
+      expect(t.push('Tu viens ce soir ?'), 'Non merci.');
+      expect(t.takeReady(), 'Tu viens ce soir ?');
+      expect(t.takeReady(), isNull);
+      expect(t.push('Tu viens ce soir ?'), isNull);
+    });
+    test('sous-titre encore en train d\'apparaître : la suite est dite à part', () {
+      final t = tracker();
+      expect(t.push('Je ne'), 'Je ne');
+      expect(t.push('Je ne sais pas quoi faire.'), 'sais pas quoi faire.');
+      expect(t.push('Je ne sais pas quoi faire.'), isNull);
+    });
+    test('fin ajoutée à l\'image suivante : dite aussi', () {
+      final t = tracker();
+      expect(t.push('Je ne sais pas quoi faire ce'), 'Je ne sais pas quoi faire ce');
+      expect(t.push('Je ne sais pas quoi faire ce soir'), 'soir');
+      expect(t.lastWasFull, isFalse);
+      expect(t.push('Je ne sais pas quoi faire ce soir'), isNull);
+    });
+    test('lecture nette', () {
+      expect(ReadingVote.looksClean('Non, merci !', dict), isTrue);
+      expect(ReadingVote.looksClean('Non, mrc1 !', dict), isFalse);
+      expect(ReadingVote.looksClean('Non merci', dict, confidences: [0.9, 0.95]), isTrue);
+      expect(ReadingVote.looksClean('Non merci', dict, confidences: [0.4, 0.5]), isFalse);
+      expect(ReadingVote.looksClean('?!', dict), isFalse);
+      expect(ReadingVote.looksClean('Non merci', null), isFalse);
     });
   });
 

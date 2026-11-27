@@ -19,14 +19,14 @@ class RatePacer {
   final double rushBoost;
 
   /// En dessous, pas d'accélération (une ou deux syllabes d'avance, c'est normal).
-  static const int startChars = 15;
+  static const int startChars = 5;
 
   /// Retard (en caractères) qui donne l'accélération maximale :
   /// environ un sous-titre de deux lignes en attente.
-  static const int fullChars = 100;
+  static const int fullChars = 80;
 
   /// Retard qui donne l'accélération la plus forte ([maxBoost] + [rushBoost]).
-  static const int rushChars = 260;
+  static const int rushChars = 220;
 
   /// Montée et descente maximales d'une phrase à l'autre (pas d'à-coups).
   static const double maxRise = 0.3;

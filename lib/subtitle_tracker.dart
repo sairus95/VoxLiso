@@ -5,7 +5,7 @@ import 'text_tools.dart';
 /// Un sous-titre déjà dit, et la dernière image où il a été vu.
 class _Said {
   _Said(this.norm, this.seen);
-  final String norm;
+  String norm;
   int seen;
 }
 
@@ -54,6 +54,21 @@ class SubtitleTracker {
   /// Dictionnaire de la langue en cours (ou null), pour départager les lectures.
   WordList? Function()? dictionary;
 
+  /// Sous-titre net (tous ses mots connus, lecture sûre) : dit dès la 1re
+  /// image, sans attendre [stableFrames] images ni une image de plus en cas de
+  /// désaccord (« temps réel », 27/11/2026). Activé par VoxLiso sauf en
+  /// réactivité « Stable ».
+  bool fastClean = false;
+
+  /// Moment où le dernier sous-titre dit est apparu (1re image où il a été vu).
+  DateTime? lastAppearedAt;
+
+  DateTime _firstSeen = DateTime.now();
+
+  /// Le sous-titre en cours est prêt alors qu'un précédent vient d'être dit
+  /// par le même appel : à prendre aussitôt avec [takeReady].
+  bool _readyNext = false;
+
   /// Si les lectures ne sont pas d'accord, attendre une image de plus avant de parler.
   bool waitOnDoubt = true;
 
@@ -75,10 +90,18 @@ class SubtitleTracker {
   List<String> _lastWords = const [];
   int _frame = 0;
 
+  /// Image du dernier texte rendu, et sous-titre en cours dit dès sa 1re image
+  /// (il peut encore être en train d'apparaître : la fin sera dite à part).
+  int _lastEmitFrame = -100;
+  bool _saidAtFirstSight = false;
+
   /// Entrée de l'historique du sous-titre affiché en ce moment.
   _Said? _shown;
 
   void reset() {
+    _readyNext = false;
+    _saidAtFirstSight = false;
+    _lastEmitFrame = -100;
     _candidate = null;
     _candidateNorm = '';
     _count = 0;
@@ -102,6 +125,7 @@ class SubtitleTracker {
   }) {
     final norm = normalizeForCompare(text);
     _frame++;
+    _readyNext = false;
 
     if (norm.replaceAll(' ', '').length < 2) {
       // Le sous-titre a disparu pendant qu'on départageait : on le dit quand même.
@@ -133,6 +157,13 @@ class SubtitleTracker {
       _count++;
       // Toujours affiché : il reste « vu à l'instant ».
       if (_candidateDone) _shown?.seen = _frame;
+      // Dit dès sa 1re image, il s'est allongé à l'image suivante (il finissait
+      // d'apparaître) : sa fin est dite aussi.
+      if (_candidateDone && _saidAtFirstSight && _count == 2 && norm.length > _candidateNorm.length) {
+        _saidAtFirstSight = false;
+        final tail = _grownTail(text, norm);
+        if (tail != null) return tail;
+      }
       // On garde la lecture la plus complète de ce sous-titre.
       if (norm.length > _candidateNorm.length) {
         _candidate = text;
@@ -142,6 +173,8 @@ class SubtitleTracker {
       // Nouveau sous-titre : le précédent, s'il attendait d'être départagé (ou
       // s'il n'a été vu qu'une fois), est dit d'abord.
       pending = _takePending(briefOk: true, next: norm);
+      _firstSeen = DateTime.now();
+      _saidAtFirstSight = false;
       _shown = null;
       _candidate = text;
       _candidateNorm = norm;
@@ -159,15 +192,42 @@ class SubtitleTracker {
         }
       }
     }
-    if (pending != null) return pending;
-
-    if (_candidateDone || _count < stableFrames) return null;
-    // Lectures en désaccord : une image de plus pour départager (une seule fois).
-    if (waitOnDoubt && !_waited && !_readingsAgree()) {
-      _waited = true;
-      return null;
+    if (_candidateDone) return pending;
+    var ready = false;
+    if (_count >= stableFrames) {
+      // Lectures en désaccord : une image de plus pour départager (une seule
+      // fois), sauf si le texte retenu est déjà net.
+      if (waitOnDoubt && !_waited && !_readingsAgree() && !(fastClean && _cleanNow())) {
+        _waited = true;
+      } else {
+        ready = true;
+      }
+    } else if (fastClean && _cleanNow()) {
+      ready = true; // net dès la 1re image : dit tout de suite
+    }
+    if (!ready) return pending;
+    if (pending != null) {
+      // Le précédent vient d'être dit : celui-ci suit aussitôt (takeReady).
+      _readyNext = true;
+      return pending;
     }
     return _emitCandidate();
+  }
+
+  /// Sous-titre prêt à dire juste après celui que [push] vient de renvoyer
+  /// (deux sous-titres qui s'enchaînent sur la même image), ou null.
+  String? takeReady() {
+    if (!_readyNext) return null;
+    _readyNext = false;
+    if (_candidate == null || _candidateDone) return null;
+    return _emitCandidate();
+  }
+
+  bool _cleanNow() {
+    final dict = dictionary?.call();
+    if (dict == null || _readings.isEmpty) return false;
+    final text = ReadingVote.combine(_readings, dict: dict);
+    return ReadingVote.looksClean(text, dict, confidences: _readings.first.confidence.values);
   }
 
   void _addReading(OcrReading r) {
@@ -215,10 +275,13 @@ class SubtitleTracker {
   /// Dit le sous-titre en cours : texte obtenu en combinant toutes ses lectures.
   String? _emitCandidate() {
     _candidateDone = true;
+    lastAppearedAt = _firstSeen;
     var text = ReadingVote.combine(_readings, dict: dictionary?.call());
     if (normalizeForCompare(text).isEmpty) text = _candidate!;
     lastFull = text;
-    return _emit(text, normalizeForCompare(text));
+    final out = _emit(text, normalizeForCompare(text));
+    _saidAtFirstSight = out != null && _count == 1;
+    return out;
   }
 
   String? _emit(String text, String norm) {
@@ -237,9 +300,15 @@ class SubtitleTracker {
 
     final tokens = _tokenize(text);
     final words = tokens.map((t) => t.normalized).toList();
-    final overlap = _overlap(_lastWords, words);
+    var overlap = _overlap(_lastWords, words);
+    // Dit à l'instant (2 mots ou plus), il revient allongé : il était en train
+    // d'apparaître, seule la suite est dite (« Je ne » puis « Je ne sais pas »).
+    if (overlap == 0 && _frame - _lastEmitFrame <= 2 && _startsWith(words, _lastWords)) {
+      overlap = _lastWords.length;
+    }
 
     _lastWords = words;
+    _lastEmitFrame = _frame;
     final entry = _Said(norm, _frame);
     _history.add(entry);
     _shown = entry;
@@ -252,6 +321,33 @@ class SubtitleTracker {
     }
     lastWasFull = true;
     return text;
+  }
+
+  /// [words] commence par tous les mots de [start] (au moins 2), et en a d'autres.
+  static bool _startsWith(List<String> words, List<String> start) {
+    if (start.length < 2 || words.length <= start.length) return false;
+    for (var i = 0; i < start.length; i++) {
+      if (start[i] != words[i] && similarity(start[i], words[i]) < 0.75) return false;
+    }
+    return true;
+  }
+
+  /// Fin d'un sous-titre dit trop tôt, à dire si elle est faite de vrais mots.
+  String? _grownTail(String text, String norm) {
+    final tokens = _tokenize(text);
+    final words = tokens.map((t) => t.normalized).toList();
+    if (!_startsWith(words, _lastWords)) return null;
+    final tail = tokens.sublist(_lastWords.length).map((t) => t.original).join(' ');
+    if (!ReadingVote.looksClean(tail, dictionary?.call())) return null;
+    _lastWords = words;
+    _lastEmitFrame = _frame;
+    _shown?.norm = norm;
+    _candidate = text;
+    _candidateNorm = norm;
+    lastWasFull = false;
+    lastFull = text;
+    lastAppearedAt = _firstSeen;
+    return tail;
   }
 
   static List<_Token> _tokenize(String text) {
