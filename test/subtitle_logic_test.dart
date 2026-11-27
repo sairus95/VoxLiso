@@ -14,6 +14,7 @@ import 'package:voxliso/speech_text.dart';
 import 'package:voxliso/spell_fixer.dart';
 import 'package:voxliso/static_filter.dart';
 import 'package:voxliso/subtitle_locator.dart';
+import 'package:voxliso/subtitle_style.dart';
 import 'package:voxliso/subtitle_tracker.dart';
 import 'package:voxliso/updater.dart';
 import 'package:voxliso/text_tools.dart';
@@ -940,6 +941,111 @@ void main() {
       expect(ReadingVote.looksClean('Non merci', dict, confidences: [0.4, 0.5]), isFalse);
       expect(ReadingVote.looksClean('?!', dict), isFalse);
       expect(ReadingVote.looksClean('Non merci', null), isFalse);
+    });
+  });
+
+  group('Seulement les sous-titres', () {
+    final dict = WordList.fromWords([
+      'non', 'merci', 'je', 'ne', 'sais', 'pas', 'quoi', 'faire', 'tu', 'viens', 'reste',
+      'ok', 'ans', 'rendez', 'vous', 'à',
+    ]);
+    const zone = Rect.fromLTRB(0.15, 0.62, 0.85, 0.95);
+    const sub = Rect.fromLTRB(0.3, 0.83, 0.7, 0.87); // centré, hauteur 0,04
+    SeenGeom g(Rect r, String text, {double? angle}) => SeenGeom(r, text, angle: angle);
+    StyleVerdict run(SubtitleStyle st, List<SeenGeom> lines, {int visible = 2, bool clean = false}) =>
+        st.filter(lines, zone: zone, visibleLines: visible, dict: dict, needClean: clean);
+    SubtitleStyle learnedStyle([DateTime Function()? clock]) {
+      final st = SubtitleStyle(clock: clock);
+      for (final text in ['Non merci', 'Tu viens', 'Je ne sais pas']) {
+        st.learn([g(sub, text)], dict: dict);
+      }
+      return st;
+    }
+
+    test('heure, chaîne, adresse web, mot-dièse : écartés', () {
+      expect(isJunkLine('20:45', dict), isTrue);
+      expect(isJunkLine('TF1', dict), isTrue);
+      expect(isJunkLine('HD', dict), isTrue);
+      expect(isJunkLine('www.france.tv', dict), isTrue);
+      expect(isJunkLine('#Quotidien', dict), isTrue);
+      expect(isJunkLine('Non.', dict), isFalse);
+      expect(isJunkLine('OK', dict), isFalse);
+      expect(isJunkLine('- 20 ans ?', dict), isFalse);
+      expect(isJunkLine('Rendez-vous à 20h30.', dict), isFalse);
+    });
+    test('lignes l\'une sous l\'autre : un seul groupe', () {
+      final groups = groupLines([
+        sub,
+        const Rect.fromLTRB(0.35, 0.88, 0.65, 0.92),
+        const Rect.fromLTRB(0.16, 0.65, 0.3, 0.72),
+      ]);
+      expect(groups, [
+        [0, 1],
+        [2],
+      ]);
+    });
+    test('avant d\'apprendre : sous-titre centré lu, panneau sur le côté écarté', () {
+      final v = run(SubtitleStyle(), [
+        g(const Rect.fromLTRB(0.16, 0.65, 0.3, 0.72), 'HÔTEL'),
+        g(sub, 'Non merci'),
+      ]);
+      expect(v.kept, {1});
+      expect(v.ignored, {0});
+    });
+    test('vraie phrase pas centrée : lue quand même', () {
+      final v = run(SubtitleStyle(),
+          [g(const Rect.fromLTRB(0.16, 0.8, 0.44, 0.84), 'Je ne sais pas quoi faire.')]);
+      expect(v.kept, {0});
+    });
+    test('texte penché (décor) : écarté', () {
+      expect(run(SubtitleStyle(), [g(sub, 'Non merci', angle: 20)]).kept, isEmpty);
+      expect(run(SubtitleStyle(), [g(sub, 'Non merci', angle: 358)]).kept, {0});
+    });
+    test('image pleine de texte (menu) : rien lu tant que rien n\'est appris', () {
+      final v = run(SubtitleStyle(), [g(sub, 'Non merci')], visible: 12);
+      expect(v.kept, isEmpty);
+      expect(v.busy, isTrue);
+    });
+    test('zone du haut : texte net exigé au début', () {
+      expect(run(SubtitleStyle(), [g(sub, 'Xqzt brmw')], clean: true).kept, isEmpty);
+      expect(run(SubtitleStyle(), [g(sub, 'Non merci')], clean: true).kept, {0});
+    });
+    test('appris : même taille et même place seulement', () {
+      final st = learnedStyle();
+      expect(st.learned, isTrue);
+      expect(st.height, closeTo(0.04, 1e-9));
+      expect(st.center, closeTo(0.5, 1e-9));
+      // Deux fois plus grand (titre, enseigne) : écarté.
+      expect(run(st, [g(const Rect.fromLTRB(0.3, 0.8, 0.7, 0.88), 'Non merci')]).kept, isEmpty);
+      // Même taille mais décalé : écarté, sauf une vraie phrase.
+      const off = Rect.fromLTRB(0.5, 0.83, 0.74, 0.87);
+      expect(run(st, [g(off, 'POLICE')]).kept, isEmpty);
+      expect(run(st, [g(off, 'Je ne sais pas quoi faire.')]).kept, {0});
+      // Menu à l'écran : le sous-titre qui a le bon aspect est lu, le reste non.
+      expect(run(st, [g(sub, 'Non merci')], visible: 12).kept, {0});
+      expect(run(st, [g(off, 'Je ne sais pas quoi faire.')], visible: 12).kept, isEmpty);
+    });
+    test('apprend seulement sur un sous-titre seul et net', () {
+      final st = SubtitleStyle();
+      st.learn([g(sub, 'Non merci'), g(const Rect.fromLTRB(0.16, 0.65, 0.3, 0.72), 'HÔTEL')],
+          dict: dict);
+      st.learn([g(sub, 'Xqzt brmw')], dict: dict);
+      expect(st.samples, 0);
+    });
+    test('téléphone déplacé : réapprend après 3 sous-titres du même aspect', () {
+      var now = DateTime(2026, 11, 27, 18);
+      final st = learnedStyle(() => now);
+      const moved = Rect.fromLTRB(0.25, 0.78, 0.65, 0.87); // plus grand, décalé
+      now = now.add(const Duration(seconds: 2));
+      expect(run(st, [g(moved, 'Non merci')]).kept, isEmpty);
+      now = now.add(const Duration(seconds: 2));
+      expect(run(st, [g(moved, 'Tu viens')]).kept, isEmpty);
+      now = now.add(const Duration(seconds: 2));
+      expect(run(st, [g(moved, 'Je reste')]).kept, {0});
+      expect(st.height, closeTo(0.09, 1e-9));
+      now = now.add(const Duration(seconds: 2));
+      expect(run(st, [g(moved, 'Non')]).kept, {0});
+      expect(run(st, [g(sub, 'Non merci')]).kept, isEmpty);
     });
   });
 

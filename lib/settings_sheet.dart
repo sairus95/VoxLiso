@@ -984,6 +984,16 @@ class _SettingsSheetState extends State<SettingsSheet> {
           value: s.ignoreStatic,
           onChanged: (v) => setState(() => s.ignoreStatic = v),
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Seulement les sous-titres'),
+          subtitle: const Text(
+              'Les menus, les panneaux et enseignes de l\'image, les bandeaux, l\'heure et '
+              'les adresses web ne sont pas lus. VoxLiso apprend la taille et la place des '
+              'sous-titres sur les premiers qu\'il lit. Ce qui est écarté est encadré en gris.'),
+          value: s.subtitlesOnly,
+          onChanged: (v) => setState(() => s.subtitlesOnly = v),
+        ),
         if (!Premium.instance.has(PlusFeature.blackScreen))
           ListTile(
             contentPadding: EdgeInsets.zero,

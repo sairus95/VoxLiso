@@ -28,6 +28,7 @@ import 'speech_text.dart';
 import 'spell_fixer.dart';
 import 'static_filter.dart';
 import 'subtitle_locator.dart';
+import 'subtitle_style.dart';
 import 'subtitle_tracker.dart';
 import 'system_bridge.dart';
 import 'text_tools.dart';
@@ -101,6 +102,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   /// Texte fixe (logo, heure, menu) : ignoré après 20 s sans changement.
   final StaticTextFilter _staticFilter = StaticTextFilter();
+
+  /// Aspect des sous-titres appris (taille, place) : écarte menus et panneaux.
+  final SubtitleStyle _style = SubtitleStyle();
+  String _styleKey = '';
 
   /// Écran noir pendant la lecture.
   bool _dimmed = false;
@@ -463,12 +468,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Lecture normale déjà nette (mots connus, ML Kit sûr) : dite tout de suite,
     // sans 2e lecture (≈ 0,3 s de gagnées, et l'image suivante arrive plus tôt).
     if (!found.fromMirror && found.inZone.isNotEmpty && _cleanLines(found.inZone)) {
-      _onLines(found.inZone.map((l) => l.text).toList(), confidence: _confidenceOf(found.inZone));
+      _onLines(found.inZone.map((l) => l.text).toList(),
+          confidence: _confidenceOf(found.inZone), geoms: found.geoms);
       return;
     }
     final main = found.fromMirror ? const <TextLine>[] : found.inZone;
     final up = frame.uprightSize;
-    final second = await _enhancedPass(image, cam, showBoxes: main.isEmpty, seen: [
+    final second = await _enhancedPass(image, cam,
+        showBoxes: main.isEmpty, visibleLines: found.all.length, seen: [
       for (final l in main)
         Rect.fromLTRB(l.boundingBox.left / up.width, l.boundingBox.top / up.height,
             l.boundingBox.right / up.width, l.boundingBox.bottom / up.height),
@@ -482,6 +489,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
             ? null
             : OcrReading(_keyed(second.map((l) => l.text).toList()),
                 confidence: _confidenceOf(second)),
+        geoms: found.geoms,
       );
     } else if (second != null && second.isNotEmpty) {
       // Rien dans la zone sur l'image normale : la lecture renforcée seule.
@@ -489,14 +497,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     } else {
       // Toujours rien dans la zone : la zone du haut (ou rien).
       _onLines(found.inZone.map((l) => l.text).toList(),
-          confidence: _confidenceOf(found.inZone));
+          confidence: _confidenceOf(found.inZone), geoms: found.geoms);
     }
   }
 
   /// Confiance de ML Kit pour chaque mot (Android ; rien sur iPhone).
   /// Bip de cadrage avant la lecture (réglage « Bips pour cadrer la télé ») :
   /// texte dans la zone jaune -> bip, d'autant plus aigu qu'il est lisible.
-  void _aimBeep(({List<TextLine> all, List<TextLine> inZone, bool fromMirror}) found) {
+  void _aimBeep(({List<TextLine> all, List<TextLine> inZone, bool fromMirror, List<SeenGeom> geoms}) found) {
     if (!s.aimBeeps || s.screenSource || found.fromMirror || _speech.muted) return;
     final hz = aimBeepHz(
       found.inZone.length,
@@ -540,7 +548,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// [seen] : lignes retenues sur l'image normale (fractions de l'image) ; le
   /// recadrage les contient en entier, même si elles dépassent de la zone.
   Future<List<TextLine>?> _enhancedPass(CameraImage image, CameraDescription cam,
-      {required bool showBoxes, List<Rect> seen = const []}) async {
+      {required bool showBoxes, int visibleLines = 0, List<Rect> seen = const []}) async {
     final crop = _crop;
     final zone = Rect.fromLTRB(
       crop.ox + s.roiLeft * crop.vw,
@@ -582,10 +590,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final fixedIdx = s.ignoreStatic
         ? _staticFilter.update([for (final f in found) f.$1.text])
         : const <int>{};
-    final kept = [
+    final unfixed = [
       for (var i = 0; i < found.length; i++)
         if (!fixedIdx.contains(i)) found[i],
     ];
+    final style = _onlySubtitles(unfixed, (f) => SeenGeom(f.$2, f.$1.text, angle: f.$1.angle),
+        zone: zone, visible: visibleLines, key: _cameraStyleKey);
+    final kept = style.kept;
     Rect toDisplay(Rect r) => Rect.fromLTRB(
           (r.left - crop.ox) / crop.vw,
           (r.top - crop.oy) / crop.vh,
@@ -597,8 +608,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _boxes = [
           ..._boxes,
           for (var i = 0; i < found.length; i++)
-            DetectedBox(toDisplay(found[i].$2), !fixedIdx.contains(i),
-                fixed: fixedIdx.contains(i)),
+            DetectedBox(toDisplay(found[i].$2), kept.contains(found[i]),
+                fixed: !kept.contains(found[i])),
         ];
       }
       _diag = '$_diag\nImage renforcée : ${kept.length} ligne(s) lue(s) · ${ms}ms';
@@ -628,7 +639,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     return dy < 0 ? -1 : 1;
   }
 
-  ({List<TextLine> all, List<TextLine> inZone, bool fromMirror}) _handleResult(
+  ({List<TextLine> all, List<TextLine> inZone, bool fromMirror, List<SeenGeom> geoms})
+      _handleResult(
     RecognizedText result,
     Size upright,
     String info,
@@ -693,22 +705,46 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       lines.removeWhere(fixed.contains);
       mirrorLines.removeWhere(fixed.contains);
     }
+    // Seulement les sous-titres : menus, panneaux du décor, bandeaux écartés.
+    SeenGeom geom(TextLine l) => _geomOf(l, w, h);
+    final main = _onlySubtitles(lines, geom,
+        zone: Rect.fromLTRB(left / w, top / h, right / w, bottom / h),
+        visible: all.length, key: _cameraStyleKey);
+    final ignored = {...main.ignored};
+    var busy = main.busy;
+    lines
+      ..clear()
+      ..addAll(main.kept);
+    if (lines.isEmpty && mirrorLines.isNotEmpty) {
+      // Zone du haut : le décor y a souvent du texte, texte net exigé au début.
+      final m = _onlySubtitles(mirrorLines, geom,
+          zone: Rect.fromLTRB(left / w, mTop / h, right / w, mBottom / h),
+          visible: all.length, key: _cameraStyleKey, needClean: true);
+      ignored.addAll(m.ignored);
+      busy = busy || m.busy;
+      mirrorLines
+        ..clear()
+        ..addAll(m.kept);
+    }
     // Rien dans la zone : les sous-titres sont peut-être en haut de l'image.
     final fromMirror = lines.isEmpty && mirrorLines.isNotEmpty;
     if (fromMirror) lines.addAll(mirrorLines);
     final boxes = [
       for (final l in all)
-        DetectedBox(frac(l.boundingBox), lines.contains(l), fixed: fixed.contains(l)),
+        DetectedBox(frac(l.boundingBox), lines.contains(l),
+            fixed: fixed.contains(l) || ignored.contains(l)),
     ];
     final rawText = lines.map((l) => l.text).join(' / ');
     setState(() {
       _boxes = boxes;
-      _textOutsideOnly = lines.isEmpty && all.isNotEmpty;
+      _textOutsideOnly = lines.isEmpty && all.isNotEmpty && ignored.isEmpty;
       _diag = 'v$kAppVersion · ${_landscape ? 'paysage' : 'portrait'} · '
           '${s.photoMode ? 'Mode photo · ' : ''}$info · ${w.toInt()}×${h.toInt()} · ${ms}ms\n'
           'Texte trouvé : ${all.length} ligne(s), ${lines.length} '
           '${fromMirror ? 'dans la zone du haut' : 'dans la zone'}'
           '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
+          '${ignored.isEmpty ? '' : ', ${ignored.length} ignorée(s) (${busy ? 'menu ou page' : 'pas des sous-titres'})'}'
+          '${_style.learned ? '\nAspect des sous-titres appris' : ''}'
           '${_speech.lastDelay == null ? '' : '\nVoix : ${_secs(_speech.lastDelay!)} après l\'apparition du sous-titre (moyenne ${_secs(_speech.averageDelay!)})'}'
           '${_speech.dropped == 0 ? '' : '\n${_speech.dropped} sous-titre(s) non dit(s) : voix trop en retard'}'
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
@@ -717,10 +753,48 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Repérage automatique : toutes les lignes visibles, avec leur position.
     _locator?.add([for (final l in all) SeenLine(l.text, frac(l.boundingBox))]);
 
+    final geoms = [for (final l in lines) geom(l)];
     if (_reading && feedTracker) {
-      _onLines(lines.map((l) => l.text).toList(), confidence: _confidenceOf(lines));
+      _onLines(lines.map((l) => l.text).toList(), confidence: _confidenceOf(lines), geoms: geoms);
     }
-    return (all: all, inZone: lines, fromMirror: fromMirror);
+    return (all: all, inZone: lines, fromMirror: fromMirror, geoms: geoms);
+  }
+
+  static SeenGeom _geomOf(TextLine l, double w, double h) => SeenGeom(
+        Rect.fromLTRB(l.boundingBox.left / w, l.boundingBox.top / h, l.boundingBox.right / w,
+            l.boundingBox.bottom / h),
+        l.text,
+        angle: l.angle,
+      );
+
+  /// Zoom ou orientation changés : l'aspect des sous-titres est à réapprendre.
+  String get _cameraStyleKey => 'cam|$_landscape|$_wide|${_zoom.toStringAsFixed(1)}';
+
+  /// Réglage « Seulement les sous-titres » ([SubtitleStyle]) : lignes gardées,
+  /// lignes écartées (menu, panneau, bandeau…), image pleine de texte.
+  ({List<T> kept, Set<T> ignored, bool busy}) _onlySubtitles<T>(
+    List<T> lines,
+    SeenGeom Function(T) geom, {
+    required Rect zone,
+    required int visible,
+    required String key,
+    bool needClean = false,
+  }) {
+    if (!s.subtitlesOnly || lines.isEmpty) return (kept: [...lines], ignored: <T>{}, busy: false);
+    if (key != _styleKey) {
+      _styleKey = key;
+      _style.reset();
+    }
+    final v = _style.filter([for (final l in lines) geom(l)],
+        zone: zone, visibleLines: visible, dict: _tracker.dictionary?.call(), needClean: needClean);
+    return (
+      kept: [
+        for (var i = 0; i < lines.length; i++)
+          if (v.kept.contains(i)) lines[i],
+      ],
+      ignored: {for (final i in v.ignored) lines[i]},
+      busy: v.busy,
+    );
   }
 
   static String _secs(Duration d) =>
@@ -739,13 +813,17 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// [confidence] : confiance de ML Kit par mot ; [alternative] : 2e lecture
   /// de la même image (image renforcée), comparée mot à mot à la première.
   void _onLines(List<String> lineTexts,
-      {Map<String, double> confidence = const {}, OcrReading? alternative}) {
+      {Map<String, double> confidence = const {},
+      OcrReading? alternative,
+      List<SeenGeom> geoms = const []}) {
     final toSay = _tracker.push(
       _keyed(lineTexts),
       confidence: confidence,
       alternatives: [if (alternative != null) alternative],
     );
     if (toSay == null) return;
+    // Un sous-titre est dit : sa taille et sa place servent à reconnaître les suivants.
+    if (geoms.isNotEmpty) _style.learn(geoms, dict: _tracker.dictionary?.call());
     _sayTracked(toSay);
     // Deux sous-titres qui s'enchaînent : le nouveau, déjà net, suit aussitôt.
     final next = _tracker.takeReady();
@@ -821,6 +899,26 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       inZone.removeWhere(fixed.contains);
       inMirror.removeWhere(fixed.contains);
     }
+    // Seulement les sous-titres : menus de l'application, titres, commentaires écartés.
+    SeenGeom geom(ScreenLine l) => SeenGeom(l.rect, l.text);
+    final styleKey = 'screen|${f.landscape}';
+    final main = _onlySubtitles(inZone, geom,
+        zone: Rect.fromLTRB(0, top, 1, bottom), visible: f.lines.length, key: styleKey);
+    final ignored = {...main.ignored};
+    var busy = main.busy;
+    inZone
+      ..clear()
+      ..addAll(main.kept);
+    if (inZone.isEmpty && inMirror.isNotEmpty && mirror != null) {
+      final m = _onlySubtitles(inMirror, geom,
+          zone: Rect.fromLTRB(0, mirror.$1, 1, mirror.$2),
+          visible: f.lines.length, key: styleKey, needClean: true);
+      ignored.addAll(m.ignored);
+      busy = busy || m.busy;
+      inMirror
+        ..clear()
+        ..addAll(m.kept);
+    }
     final fromMirror = inZone.isEmpty && inMirror.isNotEmpty;
     if (fromMirror) inZone.addAll(inMirror);
     final raw = inZone.map((l) => l.text).join(' / ');
@@ -828,17 +926,21 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       setState(() {
         _screenBoxes = [
           for (final l in f.lines)
-            DetectedBox(l.rect, inZone.contains(l), fixed: fixed.contains(l)),
+            DetectedBox(l.rect, inZone.contains(l),
+                fixed: fixed.contains(l) || ignored.contains(l)),
         ];
         _screenBoxesLandscape = f.landscape;
         _diag = 'Écran du téléphone (${f.landscape ? 'paysage' : 'portrait'})\n'
             'Texte trouvé : ${f.lines.length} ligne(s), ${inZone.length} '
             '${fromMirror ? 'dans la zone du haut' : 'dans la zone'}'
             '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
+            '${ignored.isEmpty ? '' : ', ${ignored.length} ignorée(s) (${busy ? 'menu ou page' : 'pas des sous-titres'})'}'
             '${raw.isEmpty ? '' : '\n« $raw »'}';
       });
     }
-    if (_reading) _onLines(inZone.map((l) => l.text).toList());
+    if (_reading) {
+      _onLines(inZone.map((l) => l.text).toList(), geoms: [for (final l in inZone) geom(l)]);
+    }
   }
 
   Future<void> _setSource(String source) async {
