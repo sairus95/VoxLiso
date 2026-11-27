@@ -546,7 +546,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
         contentPadding: EdgeInsets.zero,
         title: const Text('Vitesse automatique'),
         subtitle: const Text(
-            'La voix accélère un peu (+40 %, jusqu\'à +60 % si elle décroche) quand les sous-titres défilent vite, '
+            'La voix accélère un peu (+40 %, jusqu\'à +80 % si elle décroche) quand les sous-titres défilent vite, '
             'pour ne pas prendre de retard, puis revient à la vitesse choisie.'),
         value: s.autoRate,
         onChanged: (v) => setState(() => s.autoRate = v),

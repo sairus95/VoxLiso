@@ -7,14 +7,15 @@ import 'dart:math' as math;
 /// sous-titres suivants déjà arrivés et pas encore dits ([waitingChars]).
 /// Les répliques d'un même sous-titre ne comptent pas comme du retard.
 class RatePacer {
-  RatePacer({this.maxBoost = 0.4, this.rushBoost = 0.2});
+  RatePacer({this.maxBoost = 0.4, this.rushBoost = 0.4});
 
   /// Accélération pour un sous-titre de deux lignes en attente : 0.4 = +40 %.
   final double maxBoost;
 
   /// Accélération en plus quand le retard dépasse [fullChars] (jusqu'à
   /// [rushChars]) : mieux vaut une voix un peu plus rapide un moment que des
-  /// phrases sautées. 0.2 : jusqu'à +60 % en tout.
+  /// phrases sautées. 0.4 : jusqu'à +80 % en tout (v1.0.87 ; +60 % avant,
+  /// la voix décrochait encore dans les scènes rapides).
   final double rushBoost;
 
   /// En dessous, pas d'accélération (une ou deux syllabes d'avance, c'est normal).
@@ -25,10 +26,10 @@ class RatePacer {
   static const int fullChars = 100;
 
   /// Retard qui donne l'accélération la plus forte ([maxBoost] + [rushBoost]).
-  static const int rushChars = 200;
+  static const int rushChars = 260;
 
   /// Montée et descente maximales d'une phrase à l'autre (pas d'à-coups).
-  static const double maxRise = 0.25;
+  static const double maxRise = 0.3;
   static const double maxFall = 0.1;
 
   double _factor = 1.0;
