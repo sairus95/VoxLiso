@@ -61,6 +61,15 @@ class SpeechService {
   /// Sous-titres abandonnés depuis le début (diagnostic).
   int dropped = 0;
 
+  /// Délai entre l'apparition d'un sous-titre et le début de sa voix
+  /// (diagnostic « temps réel ») : dernier et moyenne des 10 derniers.
+  Duration? lastDelay;
+  final List<int> _delaysMs = [];
+  Duration? get averageDelay => _delaysMs.isEmpty
+      ? null
+      : Duration(milliseconds: _delaysMs.reduce((a, b) => a + b) ~/ _delaysMs.length);
+  final Map<int, DateTime> _appearedAt = {};
+
   /// Nombre de phrases à retirer en tête de file pour revenir sous [maxChars] :
   /// des sous-titres entiers (toutes leurs répliques), les plus anciens, jamais
   /// le dernier arrivé. [queue] : (n° de sous-titre, poids en caractères).
@@ -176,9 +185,11 @@ class SpeechService {
   bool muted = false;
 
   /// Dit plusieurs phrases à la suite (ex. les répliques d'un dialogue).
-  void sayAll(List<Utterance> items) {
+  void sayAll(List<Utterance> items, {DateTime? appearedAt}) {
     if (items.isEmpty || muted) return;
     final batch = ++_batch;
+    if (appearedAt != null) _appearedAt[batch] = appearedAt;
+    if (_appearedAt.length > 50) _appearedAt.remove(_appearedAt.keys.first);
     final entries = [for (final u in items) (u: u, batch: batch)];
     if (interrupt) {
       _queue
@@ -236,6 +247,12 @@ class SpeechService {
         final u = e.u;
         await _apply(u);
         await _paceFor(e.batch);
+        final appeared = _appearedAt.remove(e.batch);
+        if (appeared != null) {
+          lastDelay = DateTime.now().difference(appeared);
+          _delaysMs.add(lastDelay!.inMilliseconds);
+          if (_delaysMs.length > 10) _delaysMs.removeAt(0);
+        }
         // Sécurité : ne jamais rester bloqué si la fin de lecture n'est pas signalée.
         final limit = Duration(seconds: 6 + u.text.length ~/ 6);
         try {

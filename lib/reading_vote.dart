@@ -225,6 +225,27 @@ class ReadingVote {
   }
 
   /// Le mot existe-t-il dans la langue ? (« l'école » : « école » suffit.)
+  static final RegExp _cleanWord = RegExp(r"[\p{L}'’]+", unicode: true);
+
+  /// Lecture « nette » : au moins un mot, au moins 90 % des mots (2 lettres
+  /// ou plus) dans le dictionnaire [dict], et confiance moyenne de ML Kit
+  /// ≥ 0,7 quand elle est connue. Une telle lecture est dite dès la 1re image,
+  /// sans attendre d'autres lectures (demande « temps réel » du 27/11/2026).
+  static bool looksClean(String text, WordList? dict,
+      {Iterable<double> confidences = const []}) {
+    if (dict == null) return false;
+    final words = [
+      for (final m in _cleanWord.allMatches(text))
+        if (m[0]!.replaceAll(RegExp(r"['’]"), '').length >= 2) m[0]!,
+    ];
+    if (words.isEmpty) return false;
+    final known = words.where((w) => isKnownWord(w, dict)).length;
+    if (known < words.length * 0.9) return false;
+    final c = confidences.toList();
+    if (c.isNotEmpty && c.reduce((a, b) => a + b) / c.length < 0.7) return false;
+    return true;
+  }
+
   static bool isKnownWord(String word, WordList? dict) {
     if (dict == null) return false;
     final parts = [for (final m in _letters.allMatches(word.toLowerCase())) m.group(0)!];

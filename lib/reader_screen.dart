@@ -149,6 +149,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _applyMute();
     });
     _tracker = SubtitleTracker(stableFrames: s.stableFrames)
+      ..fastClean = s.reactivity < 2
       // Dictionnaire de la langue lue : départage les lectures (« raisori » / « raison »).
       ..dictionary = () {
         final lang = s.autoLang ? _langDetector.current : s.lang;
@@ -440,6 +441,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final found = _handleResult(result, frame.uprightSize, info, ms, feedTracker: !enhance);
     if (!_reading) _aimBeep(found);
     if (!enhance) return;
+    // Lecture normale déjà nette (mots connus, ML Kit sûr) : dite tout de suite,
+    // sans 2e lecture (≈ 0,3 s de gagnées, et l'image suivante arrive plus tôt).
+    if (!found.fromMirror && found.inZone.isNotEmpty && _cleanLines(found.inZone)) {
+      _onLines(found.inZone.map((l) => l.text).toList(), confidence: _confidenceOf(found.inZone));
+      return;
+    }
     final main = found.fromMirror ? const <TextLine>[] : found.inZone;
     final up = frame.uprightSize;
     final second = await _enhancedPass(image, cam, showBoxes: main.isEmpty, seen: [
@@ -683,6 +690,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           'Texte trouvé : ${all.length} ligne(s), ${lines.length} '
           '${fromMirror ? 'dans la zone du haut' : 'dans la zone'}'
           '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
+          '${_speech.lastDelay == null ? '' : '\nVoix : ${_secs(_speech.lastDelay!)} après l\'apparition du sous-titre (moyenne ${_secs(_speech.averageDelay!)})'}'
           '${_speech.dropped == 0 ? '' : '\n${_speech.dropped} sous-titre(s) non dit(s) : voix trop en retard'}'
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
     });
@@ -695,6 +703,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     return (all: all, inZone: lines, fromMirror: fromMirror);
   }
+
+  static String _secs(Duration d) =>
+      '${(d.inMilliseconds / 1000).toStringAsFixed(1).replaceAll('.', ',')} s';
 
   /// Lignes lues -> texte suivi d'une image à l'autre : répliques séparées par
   /// [kPartSep], précédé de [kPartSep] si le sous-titre commence par un tiret.
@@ -716,6 +727,25 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       alternatives: [if (alternative != null) alternative],
     );
     if (toSay == null) return;
+    _sayTracked(toSay);
+    // Deux sous-titres qui s'enchaînent : le nouveau, déjà net, suit aussitôt.
+    final next = _tracker.takeReady();
+    if (next != null) _sayTracked(next);
+  }
+
+  /// Lignes de la zone assez nettes pour être dites sans 2e lecture.
+  bool _cleanLines(List<TextLine> lines) => ReadingVote.looksClean(
+        _keyed(lines.map((l) => l.text).toList()),
+        _tracker.dictionary?.call(),
+        confidences: [
+          for (final l in lines)
+            for (final e in l.elements)
+              if (e.confidence != null) e.confidence!,
+        ],
+      );
+
+  void _sayTracked(String toSay) {
+    final appearedAt = _tracker.lastAppearedAt;
     final parts = splitParts(toSay);
     if (parts.isEmpty) return;
     final text = parts.join(' ');
@@ -730,7 +760,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final whole = full ? text : splitParts(_tracker.lastFull).join(' ');
     _speakChain = _speakChain
         .then((_) => _speakSubtitle(whole.isEmpty ? text : whole, segments,
-            dialogueStart: dialogueStart))
+            dialogueStart: dialogueStart, appearedAt: appearedAt))
         .catchError((Object _) {});
   }
 
@@ -971,10 +1001,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     return (voice: second, pitch: chosenPitch ?? 1.0);
   }
 
+  /// Apparition du sous-titre en cours de lecture (délai affiché au diagnostic).
+  DateTime? _appearedAt;
+
   /// Identifie la langue (mode Auto), traduit si demandé, puis dit le
   /// sous-titre : une voix par réplique dans les dialogues.
   Future<void> _speakSubtitle(String fullText, List<String> segments,
-      {bool dialogueStart = false}) async {
+      {bool dialogueStart = false, DateTime? appearedAt}) async {
+    _appearedAt = appearedAt;
     final before = _langDetector.current;
     final lang = s.autoLang ? await _langDetector.detect(fullText) : s.lang;
     if (_closed || !_reading) return;
@@ -1097,7 +1131,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           voice: (firstIndex + i).isOdd ? second.voice : first,
           pitch: (firstIndex + i).isOdd ? second.pitch : s.pitchFor(speakLang),
         ),
-    ]);
+    ], appearedAt: _appearedAt);
+    _appearedAt = null;
     if (s.largeMode) HapticFeedback.lightImpact();
     _history.add(HistoryEntry(
       time: DateTime.now(),
@@ -1523,6 +1558,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     _tracker
       ..stableFrames = s.stableFrames
+      ..fastClean = s.reactivity < 2
       ..reset();
     if (s.screenSource) {
       final ok = await _screen.start();
@@ -1872,6 +1908,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _applyScript(); // écriture des sous-titres changée dans les réglages
     _scheduleDim(); // écran noir activé ou désactivé dans les réglages
     _tracker.stableFrames = s.stableFrames;
+    _tracker.fastClean = s.reactivity < 2;
     _translator
       ..deeplKey = s.effectiveDeeplKey
       ..azureKey = s.effectiveAzureKey
