@@ -163,7 +163,26 @@ bool _screenCapture(File gradle) {
           '    </application>',
     );
   }
+  if (!xml.contains('.VoxAccessibilityService')) {
+    xml = xml.replaceFirst(
+      '</application>',
+      '    <service\n'
+          '            android:name=".VoxAccessibilityService"\n'
+          '            android:label="VoxLiso : sous-titres"\n'
+          '            android:exported="true"\n'
+          '            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">\n'
+          '            <intent-filter>\n'
+          '                <action android:name="android.accessibilityservice.AccessibilityService" />\n'
+          '            </intent-filter>\n'
+          '            <meta-data\n'
+          '                android:name="android.accessibilityservice"\n'
+          '                android:resource="@xml/voxliso_accessibility" />\n'
+          '        </service>\n'
+          '    </application>',
+    );
+  }
   manifest.writeAsStringSync(xml);
+  _accessibilityResources();
 
   // Moteurs de reconnaissance : latin, plus chinois, japonais et coréen
   // (le module Flutter ne les déclare qu'en « compileOnly »).
@@ -183,6 +202,33 @@ bool _screenCapture(File gradle) {
   }
   stdout.writeln('✔ Lecture de l\'écran du téléphone : service natif ($pkg)');
   return true;
+}
+
+/// Test de lecture par l'accessibilité (`VoxAccessibilityService.kt`) :
+/// configuration du service et texte affiché dans les réglages d'Android.
+void _accessibilityResources() {
+  final res = 'android/app/src/main/res';
+  Directory('$res/xml').createSync(recursive: true);
+  File('$res/xml/voxliso_accessibility.xml').writeAsStringSync(
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"\n'
+    '    android:description="@string/voxliso_a11y_description"\n'
+    '    android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeWindowsChanged|typeViewTextChanged|typeAnnouncement"\n'
+    '    android:accessibilityFeedbackType="feedbackGeneric"\n'
+    '    android:accessibilityFlags="flagIncludeNotImportantViews|flagReportViewIds|flagRetrieveInteractiveWindows"\n'
+    '    android:canRetrieveWindowContent="true"\n'
+    '    android:notificationTimeout="150" />\n',
+  );
+  Directory('$res/values').createSync(recursive: true);
+  File('$res/values/voxliso_a11y.xml').writeAsStringSync(
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<resources>\n'
+    '    <string name="voxliso_a11y_description">VoxLiso relève les textes affichés par les '
+    'autres applications (par exemple les sous-titres de Netflix ou Disney+) pour les dire à '
+    'voix haute. Les vidéos ne sont pas capturées et rien n\\\'est envoyé sur internet.</string>\n'
+    '</resources>\n',
+  );
+  stdout.writeln('✔ Service d\'accessibilité (test des sous-titres des applications protégées)');
 }
 
 /// Traducteur du téléphone sur Android : libbergamot.so (compilée par la

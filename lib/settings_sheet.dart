@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
+import 'accessibility_test.dart';
 import 'languages.dart';
 import 'settings.dart';
 import 'system_bridge.dart';
@@ -287,6 +288,20 @@ class _SettingsSheetState extends State<SettingsSheet> {
             label: const Text('Revoir le tutoriel'),
           ),
         ),
+        if (A11yBridge.isAvailable) ...[
+          const SizedBox(height: 4),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.science_outlined),
+            title: const Text('Test : sous-titres de Netflix, Disney+…'),
+            subtitle: const Text(
+                'Ces applications sont noires pour la lecture de l\'écran. Ce test regarde '
+                'si leurs sous-titres peuvent être lus par l\'accessibilité d\'Android.'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AccessibilityTestScreen()),
+            ),
+          ),
+        ],
       ];
 
   // ------------------------------------------------------------------ voix
