@@ -923,6 +923,16 @@ class _SettingsSheetState extends State<SettingsSheet> {
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
+          title: const Text('Seulement les sous-titres'),
+          subtitle: const Text(
+              'Les menus, les panneaux et enseignes de l\'image, les bandeaux, l\'heure et '
+              'les adresses web ne sont pas lus. VoxLiso apprend la taille et la place des '
+              'sous-titres sur les premiers qu\'il lit. Ce qui est écarté est encadré en gris.'),
+          value: s.subtitlesOnly,
+          onChanged: (v) => setState(() => s.subtitlesOnly = v),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
           title: const Text('Écran noir pendant la lecture'),
           subtitle: const Text(
               'En option : pendant la lecture, après 8 secondes sans toucher l\'écran, il passe '

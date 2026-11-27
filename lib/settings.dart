@@ -229,6 +229,11 @@ class AppSettings {
   bool get ignoreStatic => _prefs.getBool('ignoreStatic') ?? true;
   set ignoreStatic(bool v) => _prefs.setBool('ignoreStatic', v);
 
+  /// Seulement les sous-titres : menus, panneaux du décor, bandeaux, heure et
+  /// adresses web écartés (`SubtitleStyle`, v1.0.92).
+  bool get subtitlesOnly => _prefs.getBool('subtitlesOnly') ?? true;
+  set subtitlesOnly(bool v) => _prefs.setBool('subtitlesOnly', v);
+
   /// Écran noir pendant la lecture (caméra) : toucher pour le rallumer.
   /// En option, désactivé par défaut (nouvelle clé depuis la v1.0.33 : l'ancien
   /// réglage, activé par défaut, n'est pas repris).
