@@ -168,6 +168,26 @@ class RoiOverlay extends StatelessWidget {
     });
   }
 
+  /// Décalage de la barre jaune dans sa zone tactile. La zone tactile de
+  /// 44 px reste entière dans l'image (elle est poussée vers l'intérieur
+  /// quand le cadre touche un bord), mais la barre, elle, reste sur le trait
+  /// du cadre, collée au bord de l'image. Retour du 28/11/2026 : la barre du
+  /// bas se détachait du cadre quand la zone descendait jusqu'en bas de l'image.
+  static Offset barOffset(Rect rect, Size bounds, {required bool vertical, double thickness = 10}) {
+    final left = rect.left.clamp(0.0, math.max(0.0, bounds.width - rect.width)).toDouble();
+    final top = rect.top.clamp(0.0, math.max(0.0, bounds.height - rect.height)).toDouble();
+    if (vertical) {
+      final cx = rect.center.dx
+          .clamp(thickness / 2, math.max(thickness / 2, bounds.width - thickness / 2))
+          .toDouble();
+      return Offset(cx - (left + rect.width / 2), 0);
+    }
+    final cy = rect.center.dy
+        .clamp(thickness / 2, math.max(thickness / 2, bounds.height - thickness / 2))
+        .toDouble();
+    return Offset(0, cy - (top + rect.height / 2));
+  }
+
   /// Poignée de bord : barre jaune au milieu du côté, zone tactile de 44 px.
   Widget _edge({
     required Rect rect,
@@ -190,13 +210,16 @@ class RoiOverlay extends StatelessWidget {
           onPanUpdate: (d) => onDrag(d.delta),
           onPanEnd: (_) => onChangeEnd(),
           child: Center(
-            child: Container(
-              width: vertical ? 10 : 72,
-              height: vertical ? 56 : 10,
-              decoration: BoxDecoration(
-                color: kBrandYellow,
-                borderRadius: BorderRadius.circular(5),
-                boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 4)],
+            child: Transform.translate(
+              offset: barOffset(rect, bounds, vertical: vertical),
+              child: Container(
+                width: vertical ? 10 : 72,
+                height: vertical ? 56 : 10,
+                decoration: BoxDecoration(
+                  color: kBrandYellow,
+                  borderRadius: BorderRadius.circular(5),
+                  boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 4)],
+                ),
               ),
             ),
           ),

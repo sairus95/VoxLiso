@@ -4,10 +4,11 @@ import 'package:voxliso/language_detector.dart';
 import 'package:voxliso/aim_beep.dart';
 import 'package:voxliso/zone_profiles.dart';
 import 'package:voxliso/languages.dart';
-import 'dart:ui' show Rect;
+import 'dart:ui' show Offset, Rect, Size;
 
 import 'package:voxliso/punctuation.dart';
 import 'package:voxliso/rate_pacer.dart';
+import 'package:voxliso/roi_overlay.dart';
 import 'package:voxliso/reading_vote.dart';
 import 'package:voxliso/sentence_joiner.dart';
 import 'package:voxliso/speech_service.dart';
@@ -1133,6 +1134,25 @@ void main() {
       now = now.add(const Duration(seconds: 6));
       expect(run(st, [g(big, 'Xqzt')]).kept, {0});
       expect(st.learned, isFalse);
+    });
+  });
+
+  group('Poignées du cadre', () {
+    const bounds = Size(400, 225);
+    test('cadre au milieu : barre au centre de sa zone tactile', () {
+      expect(RoiOverlay.barOffset(const Rect.fromLTWH(50, 78, 300, 44), bounds, vertical: false),
+          Offset.zero);
+    });
+    test('cadre jusqu\'en bas de l\'image : la barre reste sur le bord du cadre', () {
+      // Bord du bas à 225 : zone tactile remontée à 181–225, barre à 215–225.
+      final o = RoiOverlay.barOffset(const Rect.fromLTWH(50, 203, 300, 44), bounds, vertical: false);
+      expect(o.dy, closeTo(17, 1e-9));
+    });
+    test('cadre tout en haut, ou contre le bord droit', () {
+      expect(RoiOverlay.barOffset(const Rect.fromLTWH(50, -22, 300, 44), bounds, vertical: false).dy,
+          closeTo(-17, 1e-9));
+      expect(RoiOverlay.barOffset(const Rect.fromLTWH(378, 40, 44, 100), bounds, vertical: true).dx,
+          closeTo(17, 1e-9));
     });
   });
 
