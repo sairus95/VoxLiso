@@ -75,7 +75,9 @@ class ReadingVote {
     if (rs.isEmpty) return '';
     if (rs.length == 1) return rs.first.text.trim();
 
-    final toks = [for (final r in rs) tokens(r.text)];
+    // Ponctuation seule (« Quoi ? » en français) rattachée à son mot : elle est
+    // votée avec lui ([_punctuation]) au lieu d'être alignée comme un mot.
+    final toks = [for (final r in rs) _attachPunctuation(tokens(r.text))];
     final norms = [
       for (final t in toks) [for (final w in t) _norm(w)],
     ];
@@ -150,8 +152,10 @@ class ReadingVote {
       }
       String? bestWord;
       var bestScore = double.negativeInfinity;
+      final pivotCore = _splitPunct(pTok[k]).core;
       groups.forEach((norm, members) {
-        final spelling = _spelling(members, dict, pTok[k]);
+        final spelling = _spelling(
+            [for (final m in members) (_splitPunct(m.$1).core, m.$2)], dict, pivotCore);
         var score = members.length.toDouble();
         if (isKnownWord(spelling, dict)) score += dictBonus;
         final confs = [
@@ -172,10 +176,91 @@ class ReadingVote {
         }
       });
       // Mot présent dans une seule lecture, absent des autres : sans doute du bruit.
-      if (gaps[k] * _gapVote <= bestScore) out.add(bestWord!);
+      if (gaps[k] * _gapVote <= bestScore) out.add(_punctuation(bestWord!, cands[k], pivot));
       addInserted(k + 1);
     }
     return joinTokens(out);
+  }
+
+  /// Signes qui entourent un mot (pas l'apostrophe, ni [kPartSep], ni la
+  /// ponctuation chinoise ou japonaise, qui reste un mot à part).
+  static final RegExp _punctOnly = RegExp(r'^[.,;:!?…¿¡«»"“”„()\[\]\-–—]+$');
+  static final RegExp _leadPunct = RegExp(r'^[¿¡«"“„(\[\-–—]+\s*');
+  static final RegExp _trailPunct = RegExp(r'\s*[.,;:!?…»"”)\]\-–—]+$');
+  static const String _openingMarks = '¿¡«“„([';
+
+  /// « Quoi », « ? » → « Quoi ? » ; « « », « Bonjour » → « « Bonjour ».
+  static List<String> _attachPunctuation(List<String> toks) {
+    final out = <String>[];
+    var lead = '';
+    for (final t in toks) {
+      if (t != kPartSep && _punctOnly.hasMatch(t)) {
+        final opening = _openingMarks.contains(t[0]);
+        if (!opening && out.isNotEmpty && out.last != kPartSep && lead.isEmpty) {
+          out[out.length - 1] = '${out.last} $t';
+        } else {
+          lead = lead.isEmpty ? t : '$lead $t';
+        }
+        continue;
+      }
+      if (lead.isNotEmpty && t != kPartSep) {
+        out.add('$lead $t');
+      } else {
+        if (lead.isNotEmpty) out.add(lead);
+        out.add(t);
+      }
+      lead = '';
+    }
+    if (lead.isNotEmpty) out.add(lead);
+    return out;
+  }
+
+  static ({String lead, String core, String trail}) _splitPunct(String token) {
+    final l = _leadPunct.firstMatch(token);
+    var rest = l == null ? token : token.substring(l.end);
+    final tr = _trailPunct.firstMatch(rest);
+    if (tr != null) rest = rest.substring(0, tr.start);
+    if (rest.isEmpty) return (lead: '', core: token, trail: '');
+    return (lead: l?[0] ?? '', core: rest, trail: tr?[0] ?? '');
+  }
+
+  /// Ponctuation d'un mot, votée à part (demande du 28/11/2026 : « intégrer au
+  /// mieux la ponctuation ») : la reconnaissance de texte perd souvent ces
+  /// petits signes, mais n'en invente presque jamais. Un signe vu dans au moins
+  /// un tiers des lectures de ce mot est gardé (« Tu viens ? » lu une fois sur
+  /// trois avec son « ? » : la question reste une question) ; entre deux signes,
+  /// le plus vu, puis celui de la lecture de référence.
+  static String _punctuation(String core, List<(String, int)> cands, int pivot) {
+    final parts = [for (final c in cands) (p: _splitPunct(c.$1), i: c.$2)];
+    String pick(String Function(({String lead, String core, String trail}) p) side) {
+      final seen = [
+        for (final c in parts)
+          if (side(c.p).trim().isNotEmpty) (raw: side(c.p), i: c.i),
+      ];
+      if (seen.isEmpty || seen.length * 3 < parts.length) return '';
+      String key(String raw) => raw.replaceAll(' ', '').replaceAll('...', '…');
+      final groups = <String, List<({String raw, int i})>>{};
+      for (final s in seen) {
+        groups.putIfAbsent(key(s.raw), () => []).add(s);
+      }
+      List<({String raw, int i})>? best;
+      var bestScore = -1.0;
+      groups.forEach((_, members) {
+        final score = members.length + (members.any((m) => m.i == pivot) ? 0.5 : 0.0);
+        if (score > bestScore) {
+          bestScore = score;
+          best = members;
+        }
+      });
+      // Écriture (espace française comprise) : la plus vue dans le groupe.
+      final counts = <String, int>{};
+      for (final m in best!) {
+        counts[m.raw] = (counts[m.raw] ?? 0) + 1;
+      }
+      return counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+    }
+
+    return '${pick((p) => p.lead)}$core${pick((p) => p.trail)}';
   }
 
   /// Mots absents de la lecture de référence mais lus par d'autres lectures au
