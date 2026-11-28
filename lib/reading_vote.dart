@@ -30,6 +30,15 @@ class OcrReading {
   final Map<String, double> confidence;
 }
 
+/// Suites de mots habituelles d'une langue, apprises sur les sous-titres lus
+/// (voir `WordLearner`) : départagent deux lectures qui sont toutes deux de
+/// vrais mots (« je ne sais pas » / « je ne sait pas »).
+abstract class WordContext {
+  /// De 0 à 1 : à quel point [word] suit habituellement [previous]
+  /// (formes simplifiées, voir [normalizeForCompare]).
+  double follows(String previous, String word);
+}
+
 /// Combine plusieurs lectures d'un même sous-titre (images successives,
 /// lecture normale et lecture renforcée) en un seul texte, mot à mot.
 ///
@@ -50,10 +59,15 @@ class ReadingVote {
   /// lecture n'est retiré que si les autres sont nettement d'accord).
   static const double _gapVote = 0.8;
 
+  /// Poids des suites de mots apprises ([WordContext]), avec le mot d'avant
+  /// et avec le mot d'après : 0,6 au plus en tout, moins qu'une lecture de
+  /// plus et moins que le dictionnaire.
+  static const double contextWeight = 0.3;
+
   static final RegExp _spaces = RegExp(r'\s+');
   static final RegExp _letters = RegExp(r'\p{L}+', unicode: true);
 
-  static String combine(List<OcrReading> readings, {WordList? dict}) {
+  static String combine(List<OcrReading> readings, {WordList? dict, WordContext? context}) {
     final rs = [
       for (final r in readings)
         if (r.text.trim().isNotEmpty) r,
@@ -146,6 +160,10 @@ class ReadingVote {
         ];
         if (confs.isNotEmpty) {
           score += confidenceWeight * confs.reduce((a, b) => a + b) / confs.length;
+        }
+        if (context != null) {
+          if (out.isNotEmpty) score += contextWeight * context.follows(_norm(out.last), norm);
+          if (k + 1 < pNorm.length) score += contextWeight * context.follows(norm, pNorm[k + 1]);
         }
         if (norm == pNorm[k]) score += 0.01; // à égalité : la lecture de référence
         if (score > bestScore) {

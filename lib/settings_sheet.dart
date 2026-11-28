@@ -11,6 +11,7 @@ import 'translator.dart';
 import 'updater.dart';
 import 'version.dart';
 import 'voices.dart';
+import 'word_learner.dart';
 
 class SettingsSheet extends StatefulWidget {
   const SettingsSheet({
@@ -31,6 +32,8 @@ class SettingsSheet extends StatefulWidget {
     required this.onCheckUpdate,
     required this.onUpdate,
     this.update,
+    this.learner,
+    this.onLearnedChanged,
   });
 
   final AppSettings settings;
@@ -67,6 +70,11 @@ class SettingsSheet extends StatefulWidget {
   /// Télécharge et installe la version trouvée.
   final void Function(UpdateInfo info) onUpdate;
 
+  /// Mots appris sur les films (pour les voir ou les oublier), et à appeler
+  /// quand on en a oublié (pour enregistrer).
+  final WordLearner? learner;
+  final VoidCallback? onLearnedChanged;
+
   @override
   State<SettingsSheet> createState() => _SettingsSheetState();
 }
@@ -93,6 +101,94 @@ class _SettingsSheetState extends State<SettingsSheet> {
     _azureKey.dispose();
     _azureRegion.dispose();
     super.dispose();
+  }
+
+  /// Ce qui a été appris, avec « Voir les mots » et « Tout oublier ».
+  Widget _learnedRow(WordLearner learner) {
+    final words = learner.wordCount(), fixes = learner.fixCountOf();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        children: [
+          Text(words == 0 && fixes == 0
+              ? 'Rien d\'appris pour l\'instant.'
+              : '$words mot(s) appris, $fixes erreur(s) de lecture retenue(s).'),
+          if (words > 0)
+            TextButton(onPressed: () => _showLearned(learner), child: const Text('Voir les mots')),
+          if (words > 0 || fixes > 0 || learner.pairCount() > 0)
+            TextButton(onPressed: () => _forgetAll(learner), child: const Text('Tout oublier')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showLearned(WordLearner learner) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          title: const Text('Mots appris'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                const Text('Touchez la croix pour oublier un mot mal appris.'),
+                for (final lang in learner.languages) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 4),
+                    child: Text(languageFor(lang).label,
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final w in learner.wordsOf(lang))
+                        InputChip(
+                          label: Text(w),
+                          deleteButtonTooltipMessage: 'Oublier « $w »',
+                          onDeleted: () {
+                            learner.forget(lang, w);
+                            widget.onLearnedChanged?.call();
+                            setDialog(() {});
+                          },
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+          ],
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _forgetAll(WordLearner learner) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Tout oublier ?'),
+        content: const Text(
+            'Les mots appris, les erreurs de lecture retenues et les suites de mots seront '
+            'effacés. VoxLiso recommencera à apprendre.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Tout oublier')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    learner.clear();
+    widget.onLearnedChanged?.call();
+    if (mounted) setState(() {});
   }
 
   void _onPremium() {
@@ -975,6 +1071,19 @@ class _SettingsSheetState extends State<SettingsSheet> {
           value: s.spellFix,
           onChanged: (v) => setState(() => s.spellFix = v),
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Apprendre les mots des films'),
+          subtitle: const Text(
+              'Une intelligence artificielle, sur le téléphone, apprend au fil des films : '
+              'les mots que VoxLiso lit souvent et sans hésiter mais qui ne sont pas dans le '
+              'dictionnaire (noms des personnages, des lieux), les erreurs de lecture qu\'il '
+              'corrige souvent, et les suites de mots habituelles. Les sous-titres suivants '
+              'sont mieux reconnus. Rien n\'est envoyé.'),
+          value: s.learnWords,
+          onChanged: (v) => setState(() => s.learnWords = v),
+        ),
+        if (widget.learner != null && s.learnWords) _learnedRow(widget.learner!),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Ignorer le texte fixe'),
