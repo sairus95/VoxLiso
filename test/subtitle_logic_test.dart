@@ -159,6 +159,45 @@ void main() {
       final d = LanguageDecision('fr');
       expect(d.update('Questa è una frase italiana lunga.', {'it-IT': 0.9}), 'it');
     });
+
+    test('japonais ou chinois « en lettres latines » : jamais pour un texte latin', () {
+      final d = LanguageDecision('fr');
+      expect(d.update('Allez, viens vite !', {'ja-Latn': 0.9}), 'fr');
+      expect(d.update('Allez, viens vite !', {'ja-Latn': 0.9}), 'fr');
+      expect(d.update('Ah, mais oui, oui !', {'ja': 0.95, 'zh-Latn': 0.9}), 'fr');
+      expect(d.update('Ah, mais oui, oui !', {'ja': 0.95}), 'fr');
+      expect(d.update('Ah, mais oui, oui !', {'ja': 0.95}), 'fr');
+    });
+
+    test('discussion rapide : deux répliques courtes ne suffisent plus à changer', () {
+      final d = LanguageDecision('fr');
+      expect(d.update('Allez viens', {'es': 0.6}), 'fr');
+      expect(d.update('Allez viens', {'es': 0.6}), 'fr');
+      expect(d.update('Allez viens', {'es': 0.6}), 'es');
+    });
+  });
+
+  group('Lectures en miettes', () {
+    test('lettres seules à la suite ou éparpillées', () {
+      expect(looksFragmented('J e n e s a i s'), isTrue);
+      expect(looksFragmented('Je s ais p as'), isTrue);
+      expect(looksFragmented('Il y a un problème.'), isFalse);
+      expect(looksFragmented('J. R. R. Tolkien'), isFalse);
+      expect(looksFragmented("L' homme est là."), isFalse);
+      expect(looksFragmented('你 好 吗'), isFalse);
+      expect(looksFragmented('Oui.'), isFalse);
+    });
+    test('image en miettes ignorée, le vrai sous-titre est dit', () {
+      final t = SubtitleTracker(stableFrames: 1);
+      expect(t.push('J e n e'), isNull);
+      expect(t.push('Je ne sais pas.'), 'Je ne sais pas.');
+    });
+    test('toujours pareille 3 images de suite : lue quand même', () {
+      final t = SubtitleTracker(stableFrames: 1);
+      expect(t.push('N o n m e r c i'), isNull);
+      expect(t.push('N o n m e r c i'), isNull);
+      expect(t.push('N o n m e r c i'), isNotNull);
+    });
   });
 
   group('VoiceCatalog', () {
