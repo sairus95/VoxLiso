@@ -1153,7 +1153,11 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     segments = [for (final t in segments) fixPunctuation(t, lang: lang, dict: list)];
     if (list != null && s.learnWords) {
       // Apprentissage sur le texte lu (avant correction), puis erreurs de lecture apprises corrigées.
-      if (learnFrom != null) _learn(lang, learnFrom.text, learnFrom.readings, list);
+      // Pas quand la langue vient de changer : la détection hésite peut-être,
+      // et ce serait apprendre des mots d'une autre langue.
+      if (learnFrom != null && (!s.autoLang || before == lang)) {
+        _learn(lang, learnFrom.text, learnFrom.readings, list);
+      }
       segments = [for (final t in segments) _learner.applyFixes(lang, t, dict: list)];
     }
     // Mots mal lus corrigés avec le dictionnaire de la langue (« corne » -> « come »).
@@ -1224,7 +1228,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final lang = s.autoLang ? _langDetector.current : s.lang;
     final words = _learner.wordCount(lang), fixes = _learner.fixCountOf(lang);
     if (words == 0 && fixes == 0) return '';
-    return '\nAppris : $words mot(s), $fixes erreur(s) de lecture'
+    final unsure = _learner.provisionalCount(lang);
+    return '\nAppris : $words mot(s)${unsure == 0 ? '' : ' dont $unsure à confirmer'}, '
+        '$fixes erreur(s) de lecture'
         '${_lastLearned.isEmpty ? '' : ' (dernier : « $_lastLearned »)'}';
   }
 
