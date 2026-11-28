@@ -1,6 +1,39 @@
+import 'dart:math' as math;
+
+import 'languages.dart' show isCjkRune, isHangulRune;
 import 'reading_vote.dart';
 import 'spell_fixer.dart' show WordList;
 import 'text_tools.dart';
+
+/// Mots d'une seule lettre des langues lues (« a », « à », « y », « o », « e »…).
+const Set<String> _oneLetterWords = {'a', 'à', 'á', 'y', 'o', 'ó', 'e', 'é', 'è', 'u', 'i', 'ô'};
+final RegExp _notLetter = RegExp(r"[^\p{L}]", unicode: true);
+
+/// Lecture en miettes : trois lettres seules ou plus à la suite (« J e n e »),
+/// ou beaucoup de lettres isolées qui ne sont pas des mots (« Je s ais p »).
+/// Arrive quand le sous-titre change pendant la prise de vue (fondu, deux
+/// sous-titres mêlés) ; une voix l'épellerait lettre par lettre. Les
+/// initiales (« J. R. R. Tolkien ») et le chinois, japonais, coréen ne
+/// comptent pas.
+bool looksFragmented(String text) {
+  if (text.runes.any((r) => isCjkRune(r) || isHangulRune(r))) return false;
+  var tokens = 0, run = 0, maxRun = 0, stray = 0;
+  for (final raw in text.split(RegExp(r'\s+'))) {
+    final letters = raw.replaceAll(_notLetter, '');
+    if (letters.isEmpty) continue;
+    tokens++;
+    final initial = letters.length == 1 && raw.contains('.') && letters != letters.toLowerCase();
+    if (letters.length == 1 && !initial && !raw.contains("'") && !raw.contains('’')) {
+      run++;
+      maxRun = math.max(maxRun, run);
+      if (!_oneLetterWords.contains(letters.toLowerCase())) stray++;
+    } else {
+      run = 0;
+    }
+  }
+  if (tokens < 2) return false;
+  return maxRun >= 3 || (stray >= 2 && stray >= tokens * 0.3);
+}
 
 /// Un sous-titre déjà dit, et la dernière image où il a été vu.
 class _Said {
@@ -77,6 +110,11 @@ class SubtitleTracker {
   /// par le même appel : à prendre aussitôt avec [takeReady].
   bool _readyNext = false;
 
+  /// Lecture en miettes revue d'image en image ([looksFragmented]) : ignorée,
+  /// sauf si elle revient pareille 3 images de suite.
+  String? _fragNorm;
+  int _fragCount = 0;
+
   /// Si les lectures ne sont pas d'accord, attendre une image de plus avant de parler.
   bool waitOnDoubt = true;
 
@@ -107,6 +145,8 @@ class SubtitleTracker {
   _Said? _shown;
 
   void reset() {
+    _fragNorm = null;
+    _fragCount = 0;
     _readyNext = false;
     _saidAtFirstSight = false;
     _lastEmitFrame = -100;
@@ -133,8 +173,21 @@ class SubtitleTracker {
     List<OcrReading> alternatives = const [],
   }) {
     final norm = normalizeForCompare(text);
-    _frame++;
     _readyNext = false;
+    if (looksFragmented(text)) {
+      if (_fragNorm != null && similarity(norm, _fragNorm!) >= 0.8) {
+        _fragCount++;
+      } else {
+        _fragNorm = norm;
+        _fragCount = 1;
+      }
+      // Image de transition (fondu, deux sous-titres mêlés) : on attend la suivante.
+      if (_fragCount < 3) return null;
+    } else {
+      _fragNorm = null;
+      _fragCount = 0;
+    }
+    _frame++;
 
     if (norm.replaceAll(' ', '').length < 2) {
       // Le sous-titre a disparu pendant qu'on départageait : on le dit quand même.

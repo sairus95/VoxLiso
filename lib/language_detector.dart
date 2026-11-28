@@ -19,6 +19,12 @@ class LanguageDecision {
   String current;
   String? _pending;
   int _pendingCount = 0;
+  int _pendingLetters = 0;
+
+  /// Langues écrites avec leur propre écriture : jamais choisies pour un
+  /// texte en alphabet latin (la voix japonaise ou chinoise épelait alors les
+  /// sous-titres français lettre par lettre, retour du 28/11/2026).
+  static const Set<String> cjkCodes = {'zh', 'ja', 'ko'};
 
   static const int minLetters = 8;
 
@@ -49,8 +55,14 @@ class LanguageDecision {
     String? best;
     var bestScore = 0.0;
     scores.forEach((tag, conf) {
-      final code = tag.split('-').first.toLowerCase();
+      final lower = tag.toLowerCase();
+      final code = lower.split('-').first;
       if (code == 'und') return; // langue indéterminée
+      // « ja-Latn », « zh-Latn », « hi-Latn »… : japonais, chinois, hindi écrits
+      // en lettres latines, ce que ML Kit croit voir dans des mots courts ou mal
+      // lus (« Ah ! Oui… »). Ce ne sont jamais des sous-titres à lire en japonais.
+      if (lower.contains('-latn')) return;
+      if (!cjk && cjkCodes.contains(code)) return;
       final ok = supportedLanguage(code) != null || (accept?.call(code) ?? false);
       if (ok && conf > bestScore) {
         best = code;
@@ -62,6 +74,7 @@ class LanguageDecision {
     if (best == current) {
       _pending = null;
       _pendingCount = 0;
+      _pendingLetters = 0;
       return current;
     }
     if (bestScore >= strongConfidence && letters >= (cjk ? strongLettersCjk : strongLetters)) {
@@ -69,17 +82,23 @@ class LanguageDecision {
     }
     if (_pending == best) {
       _pendingCount++;
+      _pendingLetters += letters;
     } else {
       _pending = best;
       _pendingCount = 1;
+      _pendingLetters = letters;
     }
-    return _pendingCount >= 2 ? _switchTo(best!) : current;
+    // Deux sous-titres de suite, assez longs à eux deux (24 lettres), ou trois :
+    // dans une discussion rapide, les répliques courtes sont souvent mal reconnues.
+    final enough = _pendingCount >= 3 || (_pendingCount >= 2 && _pendingLetters >= 24);
+    return enough ? _switchTo(best!) : current;
   }
 
   String _switchTo(String code) {
     current = code;
     _pending = null;
     _pendingCount = 0;
+    _pendingLetters = 0;
     return code;
   }
 }
