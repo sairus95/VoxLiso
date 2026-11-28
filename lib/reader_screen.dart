@@ -475,7 +475,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final main = found.fromMirror ? const <TextLine>[] : found.inZone;
     final up = frame.uprightSize;
     final second = await _enhancedPass(image, cam,
-        showBoxes: main.isEmpty, visibleLines: found.all.length, seen: [
+        showBoxes: main.isEmpty, visibleLines: _realCount(found.all.map((l) => l.text)), seen: [
       for (final l in main)
         Rect.fromLTRB(l.boundingBox.left / up.width, l.boundingBox.top / up.height,
             l.boundingBox.right / up.width, l.boundingBox.bottom / up.height),
@@ -707,11 +707,12 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     // Seulement les sous-titres : menus, panneaux du décor, bandeaux écartés.
     SeenGeom geom(TextLine l) => _geomOf(l, w, h);
+    final realVisible = _realCount(all.map((l) => l.text));
     final main = _onlySubtitles(lines, geom,
         zone: Rect.fromLTRB(left / w, top / h, right / w, bottom / h),
-        visible: all.length, key: _cameraStyleKey);
+        visible: realVisible, key: _cameraStyleKey);
     final ignored = {...main.ignored};
-    var busy = main.busy;
+    final reasons = {...main.reasons};
     lines
       ..clear()
       ..addAll(main.kept);
@@ -719,9 +720,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       // Zone du haut : le décor y a souvent du texte, texte net exigé au début.
       final m = _onlySubtitles(mirrorLines, geom,
           zone: Rect.fromLTRB(left / w, mTop / h, right / w, mBottom / h),
-          visible: all.length, key: _cameraStyleKey, needClean: true);
+          visible: realVisible, key: _cameraStyleKey, needClean: true);
       ignored.addAll(m.ignored);
-      busy = busy || m.busy;
+      reasons.addAll(m.reasons);
       mirrorLines
         ..clear()
         ..addAll(m.kept);
@@ -743,7 +744,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           'Texte trouvé : ${all.length} ligne(s), ${lines.length} '
           '${fromMirror ? 'dans la zone du haut' : 'dans la zone'}'
           '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
-          '${ignored.isEmpty ? '' : ', ${ignored.length} ignorée(s) (${busy ? 'menu ou page' : 'pas des sous-titres'})'}'
+          '${ignored.isEmpty ? '' : ', ${ignored.length} ignorée(s) : ${reasons.join(', ')}'}'
           '${_style.learned ? '\nAspect des sous-titres appris' : ''}'
           '${_speech.lastDelay == null ? '' : '\nVoix : ${_secs(_speech.lastDelay!)} après l\'apparition du sous-titre (moyenne ${_secs(_speech.averageDelay!)})'}'
           '${_speech.dropped == 0 ? '' : '\n${_speech.dropped} sous-titre(s) non dit(s) : voix trop en retard'}'
@@ -772,7 +773,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   /// Réglage « Seulement les sous-titres » ([SubtitleStyle]) : lignes gardées,
   /// lignes écartées (menu, panneau, bandeau…), image pleine de texte.
-  ({List<T> kept, Set<T> ignored, bool busy}) _onlySubtitles<T>(
+  ({List<T> kept, Set<T> ignored, bool busy, Set<String> reasons}) _onlySubtitles<T>(
     List<T> lines,
     SeenGeom Function(T) geom, {
     required Rect zone,
@@ -780,7 +781,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     required String key,
     bool needClean = false,
   }) {
-    if (!s.subtitlesOnly || lines.isEmpty) return (kept: [...lines], ignored: <T>{}, busy: false);
+    if (!s.subtitlesOnly || lines.isEmpty) {
+      return (kept: [...lines], ignored: <T>{}, busy: false, reasons: const <String>{});
+    }
     if (key != _styleKey) {
       _styleKey = key;
       _style.reset();
@@ -794,7 +797,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       ],
       ignored: {for (final i in v.ignored) lines[i]},
       busy: v.busy,
+      reasons: v.reasons,
     );
+  }
+
+  /// Lignes réelles d'une image ([isRealLine]) : pour reconnaître un menu ou une page.
+  int _realCount(Iterable<String> texts) {
+    final dict = _tracker.dictionary?.call();
+    return texts.where((t) => isRealLine(t, dict)).length;
   }
 
   static String _secs(Duration d) =>
@@ -902,19 +912,20 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Seulement les sous-titres : menus de l'application, titres, commentaires écartés.
     SeenGeom geom(ScreenLine l) => SeenGeom(l.rect, l.text);
     final styleKey = 'screen|${f.landscape}';
+    final realVisible = _realCount(f.lines.map((l) => l.text));
     final main = _onlySubtitles(inZone, geom,
-        zone: Rect.fromLTRB(0, top, 1, bottom), visible: f.lines.length, key: styleKey);
+        zone: Rect.fromLTRB(0, top, 1, bottom), visible: realVisible, key: styleKey);
     final ignored = {...main.ignored};
-    var busy = main.busy;
+    final reasons = {...main.reasons};
     inZone
       ..clear()
       ..addAll(main.kept);
     if (inZone.isEmpty && inMirror.isNotEmpty && mirror != null) {
       final m = _onlySubtitles(inMirror, geom,
           zone: Rect.fromLTRB(0, mirror.$1, 1, mirror.$2),
-          visible: f.lines.length, key: styleKey, needClean: true);
+          visible: realVisible, key: styleKey, needClean: true);
       ignored.addAll(m.ignored);
-      busy = busy || m.busy;
+      reasons.addAll(m.reasons);
       inMirror
         ..clear()
         ..addAll(m.kept);
@@ -934,7 +945,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
             'Texte trouvé : ${f.lines.length} ligne(s), ${inZone.length} '
             '${fromMirror ? 'dans la zone du haut' : 'dans la zone'}'
             '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
-            '${ignored.isEmpty ? '' : ', ${ignored.length} ignorée(s) (${busy ? 'menu ou page' : 'pas des sous-titres'})'}'
+            '${ignored.isEmpty ? '' : ', ${ignored.length} ignorée(s) : ${reasons.join(', ')}'}'
             '${raw.isEmpty ? '' : '\n« $raw »'}';
       });
     }
