@@ -135,7 +135,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
             child: ListView(
               shrinkWrap: true,
               children: [
-                const Text('Touchez la croix pour oublier un mot mal appris.'),
+                const Text('Touchez la croix pour oublier un mot mal appris : il ne sera plus appris. '
+                    '« ? » : mot encore à confirmer.'),
                 for (final lang in learner.languages) ...[
                   Padding(
                     padding: const EdgeInsets.only(top: 12, bottom: 4),
@@ -148,7 +149,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                     children: [
                       for (final w in learner.wordsOf(lang))
                         InputChip(
-                          label: Text(w),
+                          label: Text(learner.isConfirmed(lang, w) ? w : '$w ?'),
                           deleteButtonTooltipMessage: 'Oublier « $w »',
                           onDeleted: () {
                             learner.forget(lang, w);

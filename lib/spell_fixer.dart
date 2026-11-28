@@ -36,10 +36,16 @@ class WordList {
   /// pour l'emporter sur un mot fréquent de la langue.
   static const int learnedRank = 25000;
 
-  void addLearned(String word) {
+  /// Rang d'un mot appris pas encore confirmé : il compte comme un mot de la
+  /// langue, mais la correction (rang < 30 000) n'y ramène rien.
+  static const int provisionalRank = 40000;
+
+  /// Ajoute un mot appris, ou change son rang s'il l'est déjà.
+  void addLearned(String word, {int rank = learnedRank}) {
     final w = word.toLowerCase();
-    if (w.isEmpty || rank.containsKey(w)) return;
-    rank[w] = learnedRank;
+    if (w.isEmpty) return;
+    if (this.rank.containsKey(w) && !learned.contains(w)) return; // mot de la langue
+    this.rank[w] = rank;
     learned.add(w);
     byNorm.putIfAbsent(_strip(w), () => w);
   }

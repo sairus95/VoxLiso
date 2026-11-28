@@ -23,11 +23,18 @@ bool startsWithDialogue(String text) => text.trimLeft().startsWith(kPartSep);
 /// Une lecture de l'OCR : le texte nettoyé, et la confiance que ML Kit donne
 /// à chaque mot (Android seulement ; vide sinon).
 class OcrReading {
-  const OcrReading(this.text, {this.confidence = const {}});
+  const OcrReading(this.text, {this.confidence = const {}, this.frame = -1});
   final String text;
 
   /// Mot (version simplifiée, voir [normalizeForCompare]) -> confiance de 0 à 1.
   final Map<String, double> confidence;
+
+  /// Numéro de l'image lue (-1 : inconnu). La lecture normale et la lecture
+  /// renforcée d'une même image ont le même numéro : pour apprendre un mot,
+  /// elles ne comptent pas comme deux images (voir `WordLearner`).
+  final int frame;
+
+  OcrReading withFrame(int f) => OcrReading(text, confidence: confidence, frame: f);
 }
 
 /// Suites de mots habituelles d'une langue, apprises sur les sous-titres lus

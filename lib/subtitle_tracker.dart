@@ -246,11 +246,11 @@ class SubtitleTracker {
       _readings.clear();
     }
     if (!_candidateDone) {
-      _addReading(OcrReading(text, confidence: confidence));
+      _addReading(OcrReading(text, confidence: confidence, frame: _frame));
       for (final alt in alternatives) {
         final altNorm = normalizeForCompare(alt.text);
         if (altNorm.isNotEmpty && similarity(altNorm, _candidateNorm) >= _sameReading) {
-          _addReading(alt);
+          _addReading(alt.withFrame(_frame));
         }
       }
     }

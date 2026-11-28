@@ -1300,8 +1300,16 @@ void main() {
         l.observe('fr', t, dict: d, readings: [r(t), r(t)]);
       }
       expect(d.contains('hermione'), isTrue);
-      expect(SpellFixer.fix('Herrnione, viens.', d, lang: 'fr'), 'Hermione, viens.');
       expect(SpellFixer.fix('Hermione, viens.', d, lang: 'fr'), 'Hermione, viens.');
+      // À confirmer : la correction n'y ramène encore rien.
+      expect(l.isConfirmed('fr', 'hermione'), isFalse);
+      expect(SpellFixer.fix('Herrnione, viens.', d, lang: 'fr'), 'Herrnione, viens.');
+      for (final t in ['Oui, Hermione.', 'Va, Hermione.', 'Tu es Hermione.']) {
+        l.observe('fr', t, dict: d, readings: [r(t), r(t)]);
+      }
+      expect(l.isConfirmed('fr', 'hermione'), isTrue);
+      expect(l.provisionalCount('fr'), 0);
+      expect(SpellFixer.fix('Herrnione, viens.', d, lang: 'fr'), 'Hermione, viens.');
     });
 
     test('suites de mots apprises : départagent deux vrais mots', () {
@@ -1444,6 +1452,165 @@ void main() {
     test('voix : signe en tête retiré, tiret de fin en suspension', () {
       expect(speakableText(', et puis on part'), 'et puis on part');
       expect(speakableText('Je pense que -'), 'Je pense que…');
+    });
+  });
+
+  group('Apprentissage des mots plus robuste (28/11/2026)', () {
+    WordList dict([List<String> more = const []]) => WordList.fromWords([
+          'je', 'tu', 'il', 'elle', 'on', 'nous', 'vois', 'merci', 'viens', 'non', 'oui', 'la',
+          'maison', 'aria', 'va', 'es', ...more,
+        ]);
+    OcrReading r(String t, {int frame = -1, Map<String, double> c = const {}}) =>
+        OcrReading(t, confidence: c, frame: frame);
+
+    test('lecture normale et renforcée d\'une même image : pas deux preuves', () {
+      final d = dict();
+      final l = WordLearner();
+      var f = 0;
+      for (final t in ['Merci Zorvan.', 'Viens Zorvan.', 'Non Zorvan.']) {
+        f++;
+        l.observe('fr', t, dict: d, readings: [r(t, frame: f), r(t, frame: f)]);
+      }
+      expect(d.contains('zorvan'), isFalse); // 3 × 0,75
+      l.observe('fr', 'Oui Zorvan.', dict: d, readings: [r('Oui Zorvan.', frame: 9), r('Oui Zorvan.', frame: 9)]);
+      expect(d.contains('zorvan'), isTrue);
+    });
+
+    test('mot ordinaire : 4 preuves ; mot qui ressemble à un mot connu : 6', () {
+      final d = dict([for (var i = 0; i < 6000; i++) 'mot$i', 'marmotte']);
+      final l = WordLearner();
+      final who = ['je', 'tu', 'il', 'elle', 'on', 'nous'];
+      for (var i = 0; i < 3; i++) {
+        final t = '${who[i]} vois zorglub';
+        l.observe('fr', t, dict: d, readings: [r(t), r(t)]);
+      }
+      expect(d.contains('zorglub'), isFalse);
+      l.observe('fr', 'nous vois zorglub', dict: d, readings: [r('nous vois zorglub'), r('nous vois zorglub')]);
+      expect(d.contains('zorglub'), isTrue);
+
+      expect(SpellFixer.fix('rnarmotte', d), 'marmotte');
+      for (var i = 0; i < 5; i++) {
+        final t = '${who[i]} vois la rnarmotte';
+        l.observe('fr', t, dict: d, readings: [r(t), r(t)]);
+      }
+      expect(d.contains('rnarmotte'), isFalse);
+      l.observe('fr', 'nous vois la rnarmotte',
+          dict: d, readings: [r('nous vois la rnarmotte'), r('nous vois la rnarmotte')]);
+      expect(d.contains('rnarmotte'), isTrue);
+    });
+
+    test('mot appris contredit par les lectures : oublié et plus jamais appris', () {
+      final d = dict();
+      final l = WordLearner();
+      for (final t in ['Merci Arya.', 'Viens Arya.', 'Non Arya.']) {
+        l.observe('fr', t, dict: d, readings: [r(t), r(t)]);
+      }
+      expect(d.contains('arya'), isTrue);
+      // Une autre lecture donne « Aria », mot du dictionnaire, à sa place.
+      l.observe('fr', 'Oui Arya.', dict: d, readings: [r('Oui Arya.'), r('Oui Aria.')]);
+      expect(d.contains('arya'), isTrue);
+      l.observe('fr', 'Va Arya.', dict: d, readings: [r('Va Arya.'), r('Va Aria.')]);
+      expect(d.contains('arya'), isFalse);
+      expect(l.isBlocked('fr', 'arya'), isTrue);
+      for (final t in ['Tu es Arya.', 'Elle Arya.', 'On Arya.', 'Nous Arya.']) {
+        l.observe('fr', t, dict: d, readings: [r(t), r(t)]);
+      }
+      expect(d.contains('arya'), isFalse);
+    });
+
+    test('mot appris écarté par le vote au profit d\'un mot du dictionnaire : contredit', () {
+      final d = dict();
+      final l = WordLearner();
+      for (final t in ['Merci Arya.', 'Viens Arya.', 'Non Arya.']) {
+        l.observe('fr', t, dict: d, readings: [r(t), r(t)]);
+      }
+      l.observe('fr', 'Oui aria.', dict: d, readings: [r('Oui Arya.'), r('Oui aria.')]);
+      l.observe('fr', 'Va aria.', dict: d, readings: [r('Va Arya.'), r('Va aria.')]);
+      expect(d.contains('arya'), isFalse);
+    });
+
+    test('mot oublié à la main : plus jamais appris', () {
+      final d = dict();
+      final l = WordLearner();
+      for (final t in ['Merci Arya.', 'Viens Arya.', 'Non Arya.']) {
+        l.observe('fr', t, dict: d, readings: [r(t), r(t)]);
+      }
+      l.forget('fr', 'arya');
+      for (final t in ['Oui Arya.', 'Va Arya.', 'Tu es Arya.', 'Elle Arya.']) {
+        l.observe('fr', t, dict: d, readings: [r(t), r(t)]);
+      }
+      expect(d.contains('arya'), isFalse);
+      l.clear();
+      expect(l.isBlocked('fr', 'arya'), isFalse);
+    });
+
+    test('erreur apprise : retirée si le mot est lu sans hésiter, prudente sur les noms', () {
+      final d = dict();
+      final l = WordLearner();
+      for (final t in ['je vois la maison', 'tu vois la maison', 'il vois la maison', 'on vois la maison']) {
+        l.observe('fr', t, dict: d, readings: [r(t.replaceFirst('maison', 'rnaison')), r(t)]);
+      }
+      expect(l.applyFixes('fr', 'la rnaison', dict: d), 'la maison');
+      expect(l.applyFixes('fr', 'Rnaison !', dict: d), 'Maison !'); // début de phrase
+      expect(l.applyFixes('fr', 'je vois Rnaison', dict: d), 'je vois Maison'); // vu 4 fois
+
+      final l2 = WordLearner();
+      for (final t in ['je vois la maison', 'tu vois la maison']) {
+        l2.observe('fr', t, dict: d, readings: [r(t.replaceFirst('maison', 'rnaison')), r(t)]);
+      }
+      expect(l2.applyFixes('fr', 'je vois Rnaison', dict: d), 'je vois Rnaison'); // nom ?
+      expect(l2.applyFixes('fr', 'la rnaison', dict: d), 'la maison');
+      // « rnaison » lu ensuite sans hésiter par toutes les lectures : l'erreur perd une voix.
+      l2.observe('fr', 'elle vois la rnaison',
+          dict: d, readings: [r('elle vois la rnaison'), r('elle vois la rnaison')]);
+      expect(l2.applyFixes('fr', 'la rnaison', dict: d), 'la rnaison');
+    });
+
+    test('au plus 15 nouveaux mots en 10 minutes', () {
+      final d = dict();
+      final l = WordLearner();
+      final names = [
+        'Alaric', 'Brunor', 'Cyrella', 'Dorvan', 'Elkine', 'Faramon', 'Gwenor', 'Halvir',
+        'Iselde', 'Joranne', 'Kelmor', 'Lysandre', 'Morvane', 'Nerith', 'Orsolya', 'Pelmira',
+      ];
+      final t0 = DateTime(2026, 11, 28, 20);
+      for (final n in names) {
+        for (final w in ['Merci', 'Viens', 'Non']) {
+          l.observe('fr', '$w $n.', dict: d, readings: [r('$w $n.'), r('$w $n.')], now: t0);
+        }
+      }
+      expect(l.wordCount('fr'), 15);
+      expect(d.contains('pelmira'), isFalse);
+      l.observe('fr', 'Oui Pelmira.',
+          dict: d, readings: [r('Oui Pelmira.'), r('Oui Pelmira.')], now: t0.add(const Duration(minutes: 11)));
+      expect(d.contains('pelmira'), isTrue);
+    });
+
+    test('mémoire : ancienne version relue, langue abîmée ignorée seule', () {
+      final old = WordLearner.fromJson(
+          '{"v":1,"langs":{"fr":{"words":{"arya":[2,300]},"cands":{"zorglub":[1.5,300]},"fixes":{},"pairs":{}}}}');
+      final d = dict();
+      old.bind('fr', d);
+      expect(d.contains('arya'), isTrue);
+      expect(old.isConfirmed('fr', 'arya'), isTrue);
+      expect(d.rank['arya'], WordList.learnedRank);
+
+      final mixed = WordLearner.fromJson('{"v":2,"langs":{"fr":{"words":{"arya":[1,1,0]}},"de":{"words":"x"}}}');
+      expect(mixed.wordCount('fr'), 1);
+      expect(mixed.wordCount('de'), 0);
+      expect(mixed.isConfirmed('fr', 'arya'), isFalse);
+      final back = WordLearner.fromJson(mixed.toJson());
+      expect(back.wordCount('fr'), 1);
+    });
+
+    test('le suivi numérote les images des lectures', () {
+      final t = SubtitleTracker(stableFrames: 2);
+      t.push('Merci Arya.', alternatives: const [OcrReading('Merci Arya.')]);
+      t.push('Merci Arya.');
+      final frames = {for (final x in t.lastReadings) x.frame};
+      expect(t.lastReadings.length, 3);
+      expect(frames.length, 2);
+      expect(frames.contains(-1), isFalse);
     });
   });
 }
