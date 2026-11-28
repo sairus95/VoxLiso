@@ -26,6 +26,31 @@ class WordList {
   final Map<String, String> byNorm = {};
 
   bool contains(String lowerWord) => rank.containsKey(lowerWord);
+
+  /// Mots appris sur les films lus (noms des personnages…), ajoutés par
+  /// `WordLearner` : ils comptent comme des mots de la langue.
+  final Set<String> learned = {};
+
+  /// Rang donné à un mot appris : assez courant pour que la correction
+  /// ramène vers lui un mot mal lu (« Herrnione » -> « Hermione »), pas assez
+  /// pour l'emporter sur un mot fréquent de la langue.
+  static const int learnedRank = 25000;
+
+  void addLearned(String word) {
+    final w = word.toLowerCase();
+    if (w.isEmpty || rank.containsKey(w)) return;
+    rank[w] = learnedRank;
+    learned.add(w);
+    byNorm.putIfAbsent(_strip(w), () => w);
+  }
+
+  void removeLearned(String word) {
+    final w = word.toLowerCase();
+    if (!learned.remove(w)) return;
+    rank.remove(w);
+    final key = _strip(w);
+    if (byNorm[key] == w) byNorm.remove(key);
+  }
 }
 
 String _strip(String w) => normalizeForCompare(w).replaceAll(' ', '');
@@ -66,6 +91,10 @@ class SpellFixer {
     'nl', 'pl', 'ro', 'sv', 'da', 'no', 'fi', 'cs', 'sk', 'hu', 'tr', 'ca', 'hr',
   };
 
+  /// Appelé quand le dictionnaire d'une langue vient d'être chargé (pour y
+  /// ajouter les mots appris).
+  void Function(String lang, WordList list)? onLoaded;
+
   /// Dictionnaire déjà chargé (sinon null : appeler [load]).
   WordList? loaded(String lang) => _lists[lang];
 
@@ -78,6 +107,7 @@ class SpellFixer {
         final data = await rootBundle.load('assets/dict/$lang.txt.gz');
         final text = utf8.decode(gzip.decode(data.buffer.asUint8List()));
         final list = WordList.fromWords(const LineSplitter().convert(text));
+        onLoaded?.call(lang, list);
         _lists[lang] = list;
         return list;
       } catch (_) {

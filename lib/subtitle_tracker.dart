@@ -54,6 +54,14 @@ class SubtitleTracker {
   /// Dictionnaire de la langue en cours (ou null), pour départager les lectures.
   WordList? Function()? dictionary;
 
+  /// Suites de mots apprises de la langue en cours (ou null), pour départager
+  /// deux lectures qui sont toutes deux de vrais mots.
+  WordContext? Function()? context;
+
+  /// Toutes les lectures du dernier sous-titre entier rendu (pour apprendre
+  /// ses mots, voir `WordLearner`).
+  List<OcrReading> lastReadings = const [];
+
   /// Sous-titre net (tous ses mots connus, lecture sûre) : dit dès la 1re
   /// image, sans attendre [stableFrames] images ni une image de plus en cas de
   /// désaccord (« temps réel », 27/11/2026). Activé par VoxLiso sauf en
@@ -102,6 +110,7 @@ class SubtitleTracker {
     _readyNext = false;
     _saidAtFirstSight = false;
     _lastEmitFrame = -100;
+    lastReadings = const [];
     _candidate = null;
     _candidateNorm = '';
     _count = 0;
@@ -226,7 +235,7 @@ class SubtitleTracker {
   bool _cleanNow() {
     final dict = dictionary?.call();
     if (dict == null || _readings.isEmpty) return false;
-    final text = ReadingVote.combine(_readings, dict: dict);
+    final text = ReadingVote.combine(_readings, dict: dict, context: context?.call());
     return ReadingVote.looksClean(text, dict, confidences: _readings.first.confidence.values);
   }
 
@@ -276,8 +285,9 @@ class SubtitleTracker {
   String? _emitCandidate() {
     _candidateDone = true;
     lastAppearedAt = _firstSeen;
-    var text = ReadingVote.combine(_readings, dict: dictionary?.call());
+    var text = ReadingVote.combine(_readings, dict: dictionary?.call(), context: context?.call());
     if (normalizeForCompare(text).isEmpty) text = _candidate!;
+    lastReadings = List.unmodifiable(_readings);
     lastFull = text;
     final out = _emit(text, normalizeForCompare(text));
     _saidAtFirstSight = out != null && _count == 1;

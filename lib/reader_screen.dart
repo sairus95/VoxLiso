@@ -36,6 +36,7 @@ import 'updater.dart';
 import 'tutorial.dart';
 import 'version.dart';
 import 'voices.dart';
+import 'word_learner.dart';
 import 'zones.dart';
 
 class ReaderScreen extends StatefulWidget {
@@ -116,6 +117,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// Correction des mots mal lus (dictionnaires par langue).
   final SpellFixer _spell = SpellFixer();
 
+  /// Mots appris sur les films lus (noms, erreurs de lecture, suites de mots).
+  late final WordLearner _learner;
+  Timer? _learnSaveTimer;
+
+  /// Dernier mot appris (affiché au diagnostic).
+  String _lastLearned = '';
+
   /// Phrase coupée en attente de sa suite (traduction) : texte, langue et
   /// position de la réplique (pour garder la voix du bon personnage).
   ({String text, String lang, int index})? _held;
@@ -153,6 +161,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _headphones = v;
       _applyMute();
     });
+    _learner = WordLearner.fromJson(s.learnedWordsJson)..enabled = s.learnWords;
+    // Chaque dictionnaire chargé reçoit les mots appris de sa langue.
+    _spell.onLoaded = _learner.bind;
     _tracker = SubtitleTracker(stableFrames: s.stableFrames)
       ..fastClean = s.reactivity < 2
       // Dictionnaire de la langue lue : départage les lectures (« raisori » / « raison »).
@@ -161,7 +172,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         final list = _spell.loaded(lang);
         if (list == null) _spell.load(lang);
         return list;
-      };
+      }
+      // Suites de mots apprises : départagent deux lectures qui sont de vrais mots.
+      ..context = () => _learner.contextFor(s.autoLang ? _langDetector.current : s.lang);
     // Mode Auto : les autres langues en alphabet latin (néerlandais, polonais…)
     // sont aussi reconnues, pour être traduites.
     _langDetector = LanguageDetector(
@@ -727,6 +740,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
           '${ignored.isEmpty ? '' : ', ${ignored.length} ignorée(s) : ${reasons.join(', ')}'}'
           '${_style.learned ? '\nAspect des sous-titres appris' : ''}'
+          '${_learnedDiag()}'
           '${_speech.lastDelay == null ? '' : '\nVoix : ${_secs(_speech.lastDelay!)} après l\'apparition du sous-titre (moyenne ${_secs(_speech.averageDelay!)})'}'
           '${_speech.dropped == 0 ? '' : '\n${_speech.dropped} sous-titre(s) non dit(s) : voix trop en retard'}'
           '${rawText.isEmpty ? '' : '\n« $rawText »'}';
@@ -846,9 +860,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final dialogueStart = full && startsWithDialogue(toSay);
     // Langue reconnue sur le sous-titre entier, même si seule sa fin est dite.
     final whole = full ? text : splitParts(_tracker.lastFull).join(' ');
+    // Sous-titre entier : ses mots et ses lectures servent à apprendre.
+    final readings = full ? _tracker.lastReadings : const <OcrReading>[];
     _speakChain = _speakChain
         .then((_) => _speakSubtitle(whole.isEmpty ? text : whole, segments,
-            dialogueStart: dialogueStart, appearedAt: appearedAt))
+            dialogueStart: dialogueStart,
+            appearedAt: appearedAt,
+            learnFrom: full ? (text: text, readings: readings) : null))
         .catchError((Object _) {});
   }
 
@@ -926,6 +944,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
             '${fromMirror ? 'dans la zone du haut' : 'dans la zone'}'
             '${fixed.isEmpty ? '' : ', ${fixed.length} fixe(s) ignorée(s)'}'
             '${ignored.isEmpty ? '' : ', ${ignored.length} ignorée(s) : ${reasons.join(', ')}'}'
+            '${_learnedDiag()}'
             '${raw.isEmpty ? '' : '\n« $raw »'}';
       });
     }
@@ -1120,15 +1139,22 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   /// Identifie la langue (mode Auto), traduit si demandé, puis dit le
   /// sous-titre : une voix par réplique dans les dialogues.
   Future<void> _speakSubtitle(String fullText, List<String> segments,
-      {bool dialogueStart = false, DateTime? appearedAt}) async {
+      {bool dialogueStart = false,
+      DateTime? appearedAt,
+      ({String text, List<OcrReading> readings})? learnFrom}) async {
     _appearedAt = appearedAt;
     final before = _langDetector.current;
     final lang = s.autoLang ? await _langDetector.detect(fullText) : s.lang;
     if (_closed || !_reading) return;
+    final list = SpellFixer.languages.contains(lang) ? await _spell.load(lang) : null;
+    if (list != null && s.learnWords) {
+      // Apprentissage sur le texte lu (avant correction), puis erreurs de lecture apprises corrigées.
+      if (learnFrom != null) _learn(lang, learnFrom.text, learnFrom.readings, list);
+      segments = [for (final t in segments) _learner.applyFixes(lang, t, dict: list)];
+    }
     // Mots mal lus corrigés avec le dictionnaire de la langue (« corne » -> « come »).
-    if (s.spellFix && SpellFixer.languages.contains(lang)) {
-      final list = await _spell.load(lang);
-      if (list != null) segments = [for (final t in segments) SpellFixer.fix(t, list, lang: lang)];
+    if (s.spellFix && list != null) {
+      segments = [for (final t in segments) SpellFixer.fix(t, list, lang: lang)];
     }
     if (s.autoLang && lang != before) {
       s.detectedLang = lang;
@@ -1173,6 +1199,29 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
     if (segs.isEmpty) return;
     await _translateAndSay(lang, segs, firstIndex: firstIndex);
+  }
+
+  /// Apprend les mots d'un sous-titre dit ; enregistré au plus toutes les 30 s.
+  void _learn(String lang, String text, List<OcrReading> readings, WordList list) {
+    final learned = _learner.observe(lang, text, dict: list, readings: readings);
+    if (learned.isNotEmpty) _lastLearned = learned.last;
+    _learnSaveTimer ??= Timer(const Duration(seconds: 30), _saveLearned);
+  }
+
+  void _saveLearned() {
+    _learnSaveTimer?.cancel();
+    _learnSaveTimer = null;
+    s.learnedWordsJson = _learner.toJson();
+  }
+
+  /// Ligne du diagnostic : ce qui a été appris dans la langue en cours.
+  String _learnedDiag() {
+    if (!s.learnWords) return '';
+    final lang = s.autoLang ? _langDetector.current : s.lang;
+    final words = _learner.wordCount(lang), fixes = _learner.fixCountOf(lang);
+    if (words == 0 && fixes == 0) return '';
+    return '\nAppris : $words mot(s), $fixes erreur(s) de lecture'
+        '${_lastLearned.isEmpty ? '' : ' (dernier : « $_lastLearned »)'}';
   }
 
   /// Langue dans laquelle lire un sous-titre de langue [lang] ('' = pas de traduction) :
@@ -1727,6 +1776,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     SystemBridge.setReadingState('off', screen: s.screenSource);
     _speech.stop();
     WakelockPlus.disable();
+    if (_learnSaveTimer != null) _saveLearned();
     if (s.screenSource) await _screen.stop();
   }
 
@@ -2002,6 +2052,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
           pitch: pitch,
         ),
         onResetZone: () => setState(s.resetZones),
+        learner: _learner,
+        onLearnedChanged: _saveLearned,
         update: _update,
         onCheckUpdate: _manualCheckUpdate,
         onUpdate: (info) {
@@ -2017,6 +2069,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
     _speech.interrupt = s.interrupt;
     _speech.autoRate = s.autoRate;
+    _learner.enabled = s.learnWords; // « Apprendre les mots des films » changé
     _applyMute(); // « Voix seulement dans les écouteurs » changé
     _applyScript(); // écriture des sous-titres changée dans les réglages
     _scheduleDim(); // écran noir activé ou désactivé dans les réglages
@@ -2042,6 +2095,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _dimTimer?.cancel();
     _locTimer?.cancel();
     _heldTimer?.cancel();
+    if (_learnSaveTimer != null) _saveLearned();
     _speech.boost.removeListener(_onBoost);
     if (_dimmed) {
       SystemBridge.setBrightness(-1);

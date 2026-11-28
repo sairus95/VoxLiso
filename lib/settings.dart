@@ -266,6 +266,14 @@ class AppSettings {
   bool get spellFix => _prefs.getBool('spellFix') ?? true;
   set spellFix(bool v) => _prefs.setBool('spellFix', v);
 
+  /// Apprendre les mots des films (noms, erreurs de lecture, suites de mots).
+  bool get learnWords => _prefs.getBool('learnWords') ?? true;
+  set learnWords(bool v) => _prefs.setBool('learnWords', v);
+
+  /// Ce qui a été appris (JSON, voir word_learner.dart).
+  String get learnedWordsJson => _prefs.getString('learnedWords') ?? '';
+  set learnedWordsJson(String v) => _prefs.setString('learnedWords', v);
+
   /// Zoom de la caméra.
   double get zoom => _prefs.getDouble('zoom') ?? 1.0;
   set zoom(double v) => _prefs.setDouble('zoom', v);
