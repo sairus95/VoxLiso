@@ -1356,6 +1356,7 @@ void main() {
     final fr = WordList.fromWords([
       'viens', 'arrête', 'pourquoi', 'quoi', 'que', 'quel', 'tu', 'hôte', 'hôtel', 'miche',
       'bon', 'alors', 'on', 'y', 'va', 'oui', 'mais', 'non', 'vite', 'as', 'vu', 'il', 'en', 'a', 'sur',
+      'saison', 'chapitre', 'se', 'voit', 'vers',
     ]);
     final es = WordList.fromWords(['qué', 'haces', 'vienes', 'no', 'me', 'digas', 'quieres', 'venir', 'nuevo']);
     final en = WordList.fromWords(['stop', 'really', 'here', 'go']);
@@ -1375,6 +1376,9 @@ void main() {
       expect(fixPunctuation('Pourquoi7', lang: 'fr', dict: fr), 'Pourquoi?');
       expect(fixPunctuation('Tu viens 7', lang: 'fr', dict: fr), 'Tu viens ?');
       expect(fixPunctuation('Il en a 3 sur 7', lang: 'fr', dict: fr), 'Il en a 3 sur 7');
+      expect(fixPunctuation('Saison 7', lang: 'fr', dict: fr), 'Saison 7');
+      expect(fixPunctuation('Chapitre 7', lang: 'fr', dict: fr), 'Chapitre 7');
+      expect(fixPunctuation('On se voit vers 7', lang: 'fr', dict: fr), 'On se voit vers 7');
       expect(fixPunctuation('Really7', lang: 'en', dict: en), 'Really?');
     });
     test('apostrophes et élisions', () {
@@ -1403,6 +1407,10 @@ void main() {
       expect(fixPunctuation('¿Sr. García?', lang: 'es', dict: es), '¿Sr. García?');
       expect(fixPunctuation('¿Quieres venir,', lang: 'es', dict: es), '¿Quieres venir,');
       expect(fixPunctuation('iPhone nuevo', lang: 'es', dict: es), 'iPhone nuevo');
+      expect(fixPunctuation('¿Me llamas a las 3.30?', lang: 'es', dict: es), '¿Me llamas a las 3.30?');
+      expect(fixPunctuation('¿Me llamas a las 3.30', lang: 'es', dict: es), '¿Me llamas a las 3.30?');
+      expect(fixPunctuation('¿Qué hora es? Son las 3.', lang: 'es', dict: es), '¿Qué hora es? Son las 3.');
+      expect(fixPunctuation('¿Vas a ver a la Dra. López?', lang: 'es', dict: es), '¿Vas a ver a la Dra. López?');
     });
     test('vote : un « ? » perdu par deux lectures sur trois reste', () {
       final dict = WordList.fromWords(['tu', 'viens', 'ce', 'soir']);

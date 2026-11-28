@@ -51,6 +51,8 @@ String fixPunctuation(String text, {String lang = '', WordList? dict}) {
       // en fin de phrase est un « ? » précédé de l'espace française.
       t = t.replaceAllMapped(_frenchLoneSeven, (m) {
         final core = m[1]!;
+        // « Saison 7 », « Chapitre 7 », « vers 7 » : un vrai nombre.
+        if (_numberWordsFr.contains(core.toLowerCase())) return m[0]!;
         return ReadingVote.isKnownWord(core, dict) ? '$core ?' : m[0]!;
       });
     }
@@ -177,6 +179,17 @@ final RegExp _misreadQuestion = RegExp(
   unicode: true,
 );
 
+/// Mots qui annoncent un nombre : « Saison 7 », « Chapitre 7 », « vers 7 »
+/// (le « 7 » qui suit n'est pas un « ? » mal lu).
+const Set<String> _numberWordsFr = {
+  'vers', 'saison', 'chapitre', 'épisode', 'partie', 'page', 'numéro', 'chambre',
+  'porte', 'salle', 'bus', 'ligne', 'quai', 'niveau', 'étage', 'tome', 'acte',
+  'scène', 'sur', 'moins', 'plus', 'fois', 'jour', 'jours', 'heure', 'heures',
+  'code', 'table', 'case', 'canal', 'chaîne', 'piste', 'voie', 'zone', 'secteur',
+  'bloc', 'article', 'volume', 'semaine', 'sauf', 'contre', 'dans', 'avant',
+  'après', 'environ',
+};
+
 /// « Tu viens 7 » en fin de texte ou avant la réplique suivante.
 final RegExp _frenchLoneSeven = RegExp(
   r'(?<![\p{L}\p{N}])(\p{L}{2,})\s+7' + _afterMark,
@@ -210,6 +223,7 @@ const Set<String> _abbreviations = {
   'sr', 'sra', 'srta', 'st', 'dr', 'nr', 'no', 'tel', 'vol', 'ch', 'art', 'fig',
   'approx', 'min', 'max', 'sec', 'hr', 'hrs', 'mr', 'mrs', 'ms', 'jr', 'sig', 'pag',
   'pp', 'ed', 'dott', 'prof', 'ing', 'avv', 'ecc', 'z', 'evtl', 'ggf',
+  'dra', 'ud', 'uds', 'sres', 'sras', 'lic',
 };
 
 /// « iQué », « jQué », « lNo », « 1Ay », « ?Qué » en début de mot, en espagnol.
@@ -220,6 +234,8 @@ final RegExp _spanishOpening = RegExp(
 );
 
 final RegExp _closingMark = RegExp(r'[?!]');
-final RegExp _clauseEnd = RegExp(r'\.{2,}|[.!?…¿¡]');
+/// Fin d'une question ou d'une exclamation espagnole. Un point entre deux
+/// chiffres n'en est pas une : « ¿Me llamas a las 3.30? », « 2.50 euros ».
+final RegExp _clauseEnd = RegExp(r'\.{2,}|(?<!\p{N})\.|\.(?!\p{N})|[!?…¿¡]', unicode: true);
 final RegExp _lastWord = RegExp(r'\p{L}+$', unicode: true);
 final RegExp _continues = RegExp(r'[,;:\-–—]$');
