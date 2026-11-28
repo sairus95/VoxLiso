@@ -18,6 +18,7 @@ import 'premium.dart';
 import 'language_detector.dart';
 import 'languages.dart';
 import 'roi_overlay.dart';
+import 'punctuation.dart';
 import 'reading_vote.dart';
 import 'screen_capture.dart';
 import 'sentence_joiner.dart';
@@ -1176,6 +1177,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     final lang = s.autoLang ? await _langDetector.detect(fullText) : s.lang;
     if (_closed || !_reading) return;
     final list = SpellFixer.languages.contains(lang) ? await _spell.load(lang) : null;
+    // Ponctuation mal lue réparée (« Viensl » → « Viens! », « iQué » → « ¿Qué »,
+    // « Oui,mais ») : c'est elle qui donne à la voix ses pauses et ses questions.
+    segments = [for (final t in segments) fixPunctuation(t, lang: lang, dict: list)];
     if (list != null && s.learnWords) {
       // Apprentissage sur le texte lu (avant correction), puis erreurs de lecture apprises corrigées.
       if (learnFrom != null) _learn(lang, learnFrom.text, learnFrom.readings, list);

@@ -6,6 +6,7 @@ import 'package:voxliso/zone_profiles.dart';
 import 'package:voxliso/languages.dart';
 import 'dart:ui' show Rect;
 
+import 'package:voxliso/punctuation.dart';
 import 'package:voxliso/rate_pacer.dart';
 import 'package:voxliso/reading_vote.dart';
 import 'package:voxliso/sentence_joiner.dart';
@@ -1348,6 +1349,93 @@ void main() {
       expect(t.push('Merci Arya.'), isNull);
       expect(t.push('Merci Arya.'), isNotNull);
       expect(t.lastReadings.length, 2);
+    });
+  });
+
+  group('Ponctuation', () {
+    final fr = WordList.fromWords([
+      'viens', 'arrête', 'pourquoi', 'quoi', 'que', 'quel', 'tu', 'hôte', 'hôtel', 'miche',
+      'bon', 'alors', 'on', 'y', 'va', 'oui', 'mais', 'non', 'vite', 'as', 'vu', 'il', 'en', 'a', 'sur',
+    ]);
+    final es = WordList.fromWords(['qué', 'haces', 'vienes', 'no', 'me', 'digas', 'quieres', 'venir', 'nuevo']);
+    final en = WordList.fromWords(['stop', 'really', 'here', 'go']);
+    test('« ! » lu comme un l, un 1 ou un I', () {
+      expect(fixPunctuation('Viensl', lang: 'fr', dict: fr), 'Viens!');
+      expect(fixPunctuation('Viens1 Vite!', lang: 'fr', dict: fr), 'Viens! Vite!');
+      expect(fixPunctuation('Arrêtel', lang: 'fr', dict: fr), 'Arrête!');
+      expect(fixPunctuation('Stopl', lang: 'en', dict: en), 'Stop!');
+    });
+    test('vrais mots et noms propres gardés', () {
+      expect(fixPunctuation('Quel', lang: 'fr', dict: fr), 'Quel');
+      expect(fixPunctuation('Hôtel', lang: 'fr', dict: fr), 'Hôtel');
+      expect(fixPunctuation('Tu as vu Michel', lang: 'fr', dict: fr), 'Tu as vu Michel');
+      expect(fixPunctuation('Viensl', lang: 'fr'), 'Viensl'); // sans dictionnaire : on ne devine pas
+    });
+    test('« ? » lu comme un 7', () {
+      expect(fixPunctuation('Pourquoi7', lang: 'fr', dict: fr), 'Pourquoi?');
+      expect(fixPunctuation('Tu viens 7', lang: 'fr', dict: fr), 'Tu viens ?');
+      expect(fixPunctuation('Il en a 3 sur 7', lang: 'fr', dict: fr), 'Il en a 3 sur 7');
+      expect(fixPunctuation('Really7', lang: 'en', dict: en), 'Really?');
+    });
+    test('apostrophes et élisions', () {
+      expect(fixPunctuation("j' ai vu l` homme", lang: 'fr'), "j'ai vu l'homme");
+      expect(fixPunctuation("I' m here, don' t go", lang: 'en'), "I'm here, don't go");
+    });
+    test('espaces et signes en double', () {
+      expect(fixPunctuation('Oui,mais non.Tu viens?Non', lang: 'fr'), 'Oui, mais non. Tu viens? Non');
+      expect(fixPunctuation('oui , mais demain .', lang: 'fr'), 'oui, mais demain.');
+      expect(fixPunctuation('Oui,.', lang: 'fr'), 'Oui.');
+      expect(fixPunctuation('Non ?.', lang: 'fr'), 'Non ?');
+      expect(fixPunctuation('3,5 euros', lang: 'fr'), '3,5 euros');
+      expect(fixPunctuation('U.S.A. et M.Dupont', lang: 'fr'), 'U.S.A. et M.Dupont');
+      expect(fixPunctuation('Je sais... oui', lang: 'fr'), 'Je sais... oui');
+    });
+    test('point suivi d\'une minuscule : virgule', () {
+      expect(fixPunctuation('Bon. alors on y va', lang: 'fr', dict: fr), 'Bon, alors on y va');
+      expect(fixPunctuation('etc. et', lang: 'fr'), 'etc. et');
+    });
+    test('espagnol : « ¿ » et « ¡ »', () {
+      expect(fixPunctuation('iQué haces?', lang: 'es', dict: es), '¿Qué haces?');
+      expect(fixPunctuation('jNo me digas!', lang: 'es', dict: es), '¡No me digas!');
+      expect(fixPunctuation('¿Vienes', lang: 'es', dict: es), '¿Vienes?');
+      expect(fixPunctuation('¿Vienes.', lang: 'es', dict: es), '¿Vienes?');
+      expect(fixPunctuation('¿Vienes...', lang: 'es', dict: es), '¿Vienes...');
+      expect(fixPunctuation('¿Sr. García?', lang: 'es', dict: es), '¿Sr. García?');
+      expect(fixPunctuation('¿Quieres venir,', lang: 'es', dict: es), '¿Quieres venir,');
+      expect(fixPunctuation('iPhone nuevo', lang: 'es', dict: es), 'iPhone nuevo');
+    });
+    test('vote : un « ? » perdu par deux lectures sur trois reste', () {
+      final dict = WordList.fromWords(['tu', 'viens', 'ce', 'soir']);
+      expect(
+        ReadingVote.combine([
+          const OcrReading('Tu viens ce soir'),
+          const OcrReading('Tu viens ce soir ?'),
+          const OcrReading('Tu viens ce soir'),
+        ], dict: dict),
+        'Tu viens ce soir ?',
+      );
+      expect(
+        ReadingVote.combine([
+          const OcrReading('Tu viens, ce soir?'),
+          const OcrReading('Tu viens ce soir.'),
+          const OcrReading('Tu viens, ce soir?'),
+        ], dict: dict),
+        'Tu viens, ce soir?',
+      );
+    });
+    test('vote : la ponctuation ne compte pas comme un mot', () {
+      final dict = WordList.fromWords(['qué', 'haces']);
+      expect(
+        ReadingVote.combine([
+          const OcrReading('¿ Qué haces ?'),
+          const OcrReading('Qué haces'),
+        ], dict: dict),
+        '¿ Qué haces ?',
+      );
+    });
+    test('voix : signe en tête retiré, tiret de fin en suspension', () {
+      expect(speakableText(', et puis on part'), 'et puis on part');
+      expect(speakableText('Je pense que -'), 'Je pense que…');
     });
   });
 }

@@ -13,7 +13,10 @@
 /// - Points de suspension : retirés en début de réplique (« ...et puis »),
 ///   transformés en courte pause entre deux mots (« Je...je » → « Je… je »).
 /// - « !!! », « ?? » réduits à un seul signe ; guillemets retirés ; tiret
-///   d'incise (« oui - enfin, non ») transformé en virgule.
+///   d'incise (« oui - enfin, non ») transformé en virgule ; tiret de fin
+///   (« Je pense que – ») transformé en suspension ; signe sans mot devant
+///   (« , et puis ») retiré. La ponctuation mal lue par l'OCR est réparée
+///   avant, par `fixPunctuation` (`lib/punctuation.dart`).
 String speakableText(String text, {String lang = ''}) {
   final original = text.replaceAll(_spaces, ' ').trim();
   if (original.isEmpty) return original;
@@ -36,6 +39,8 @@ String speakableText(String text, {String lang = ''}) {
   t = t
       .replaceAll(_quotes, '')
       .replaceAll(_leadingEllipsis, '')
+      .replaceAll(_leadingMarks, '')
+      .replaceAll(_trailingDash, '…')
       .replaceAll(_dots, '…')
       .replaceAllMapped(_glued, (m) => '${m[1]}… ')
       .replaceAllMapped(_repeatedMarks, (m) => m[1]!)
@@ -140,6 +145,10 @@ final RegExp _speakerLabel =
 
 final RegExp _quotes = RegExp(r'["“”«»„‟‹›]');
 final RegExp _leadingEllipsis = RegExp(r'^(?:\.{2,}|…)\s*');
+/// « , et puis » (fin d'un sous-titre qui s'allonge) : signe sans mot devant.
+final RegExp _leadingMarks = RegExp(r'^[,;:.!?]+\s*');
+/// « Je pense que – » : phrase qui continue au sous-titre suivant → suspension.
+final RegExp _trailingDash = RegExp(r'(?<=\p{L})\s*[-–—]+$', unicode: true);
 final RegExp _dots = RegExp(r'\.{2,}|…+');
 final RegExp _glued = RegExp(r'(\p{L})…(?=\p{L})', unicode: true);
 final RegExp _repeatedMarks = RegExp(r'([!?])\1+');
